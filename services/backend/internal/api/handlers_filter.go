@@ -234,7 +234,7 @@ func (s *Server) handleFilterStats(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleApplyFilters(w http.ResponseWriter, r *http.Request) {
 	rpzCfg := s.getRPZConfig()
 	s.regenerateKresdConfig(rpzCfg.Enabled)
-	restartKresdProper(s.cfg.ProjectDir)
+	s.restartKresdVerified()
 
 	// Count custom domains
 	var count int

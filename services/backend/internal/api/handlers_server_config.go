@@ -139,7 +139,7 @@ func (s *Server) handleUpdateServerConfig(w http.ResponseWriter, r *http.Request
 		// Regenerate kresd config with new subnets and restart
 		rpzCfg := s.getRPZConfig()
 		s.regenerateKresdConfig(rpzCfg.Enabled)
-		restartKresdProper(s.cfg.ProjectDir)
+		s.restartKresdVerified()
 		log.Printf("Allowed subnets updated: %s", subnets)
 	}
 

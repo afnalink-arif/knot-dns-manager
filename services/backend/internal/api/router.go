@@ -91,6 +91,10 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 	autoUpdateCtx, autoUpdateCancel := context.WithCancel(context.Background())
 	go srv.runAutoUpdate(autoUpdateCtx)
 
+	// Start fleet probe watchdog (peer DNS, self RPZ, serial drift)
+	fleetProbeCtx, fleetProbeCancel := context.WithCancel(context.Background())
+	go srv.runFleetProbe(fleetProbeCtx)
+
 	r := chi.NewRouter()
 
 	// Middleware
@@ -211,6 +215,12 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 			r.Get("/history", srv.handleAlertHistory)
 		})
 
+		// Notification config (Telegram) + fleet probe status
+		r.Get("/notify/config", srv.handleGetNotifyConfig)
+		r.Put("/notify/config", srv.handleUpdateNotifyConfig)
+		r.Post("/notify/test", srv.handleTestNotify)
+		r.Get("/fleet/probe", srv.handleFleetProbeStatus)
+
 		// WebSocket for real-time updates
 		r.Get("/ws/live", srv.handleWebSocket)
 	})
@@ -259,6 +269,7 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 	})
 
 	cleanup := func() {
+		fleetProbeCancel()
 		autoUpdateCancel()
 		rpzAutoSyncCancel()
 		if srv.pollerCancel != nil {
@@ -397,6 +408,16 @@ func initPostgres(pool *pgxpool.Pool) error {
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`INSERT INTO server_config (id) VALUES (1) ON CONFLICT DO NOTHING`,
+		// Comma-separated peer IPs probed by the fleet watchdog (empty = probe nothing)
+		`ALTER TABLE server_config ADD COLUMN IF NOT EXISTS probe_peers TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS notify_config (
+			id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+			telegram_enabled BOOLEAN NOT NULL DEFAULT false,
+			telegram_bot_token TEXT NOT NULL DEFAULT '',
+			telegram_chat_id TEXT NOT NULL DEFAULT '',
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`INSERT INTO notify_config (id) VALUES (1) ON CONFLICT DO NOTHING`,
 		`ALTER TABLE server_config ADD COLUMN IF NOT EXISTS allowed_subnets TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE server_config ADD COLUMN IF NOT EXISTS retention_query_days INT NOT NULL DEFAULT 30`,
 		`ALTER TABLE server_config ADD COLUMN IF NOT EXISTS retention_metrics_days INT NOT NULL DEFAULT 15`,

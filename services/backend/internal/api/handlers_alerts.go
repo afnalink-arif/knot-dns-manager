@@ -151,7 +151,7 @@ func (s *Server) handleAlertHistory(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(queryOrDefault(r, "limit", "50"))
 
 	rows, err := s.pg.Query(r.Context(),
-		`SELECT e.id, e.rule_id, r.name, e.status, e.value, e.message, e.fired_at, e.resolved_at
+		`SELECT e.id, COALESCE(e.rule_id, 0), COALESCE(r.name, 'system'), e.status, e.value, e.message, e.fired_at, e.resolved_at
 		 FROM alert_events e
 		 LEFT JOIN alert_rules r ON r.id = e.rule_id
 		 ORDER BY e.fired_at DESC

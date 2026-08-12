@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -16,6 +17,67 @@ import (
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+// loginLimiter throttles brute-force attempts on the public login endpoint.
+// Keyed by client IP + username: 5 consecutive failures lock that pair out
+// for 15 minutes; any success clears it. In-memory is fine — a backend
+// restart resetting counters is harmless for this threat model.
+type loginLimiter struct {
+	mu       sync.Mutex
+	fails    map[string]int
+	lockedTo map[string]time.Time
+}
+
+const (
+	loginMaxFails    = 5
+	loginLockoutTime = 15 * time.Minute
+)
+
+var loginLimits = &loginLimiter{
+	fails:    map[string]int{},
+	lockedTo: map[string]time.Time{},
+}
+
+func (l *loginLimiter) isLocked(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	until, ok := l.lockedTo[key]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(l.lockedTo, key)
+		delete(l.fails, key)
+		return false
+	}
+	return true
+}
+
+func (l *loginLimiter) recordFailure(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.fails[key]++
+	if l.fails[key] >= loginMaxFails {
+		l.lockedTo[key] = time.Now().Add(loginLockoutTime)
+	}
+}
+
+func (l *loginLimiter) recordSuccess(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.fails, key)
+	delete(l.lockedTo, key)
+}
+
+// clientIP relies on chi middleware.RealIP having already rewritten
+// RemoteAddr from X-Forwarded-For (Caddy fronts this service).
+func clientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i]
+	}
+	return host
 }
 
 type LoginResponse struct {
@@ -47,6 +109,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limitKey := clientIP(r) + "|" + req.Username
+	if loginLimits.isLocked(limitKey) {
+		http.Error(w, `{"error":"terlalu banyak percobaan login, coba lagi dalam 15 menit"}`, http.StatusTooManyRequests)
+		return
+	}
+
 	// Lookup user
 	var id int
 	var hash, role string
@@ -54,15 +122,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"SELECT id, password_hash, role FROM users WHERE username = $1", req.Username,
 	).Scan(&id, &hash, &role)
 	if err != nil {
+		loginLimits.recordFailure(limitKey)
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
+		loginLimits.recordFailure(limitKey)
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
+	loginLimits.recordSuccess(limitKey)
 
 	// Generate JWT
 	expiresAt := time.Now().Add(24 * time.Hour)

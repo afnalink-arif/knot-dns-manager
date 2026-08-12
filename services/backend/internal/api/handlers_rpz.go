@@ -111,32 +111,57 @@ func resolveCacheSize(envCacheSize, projectDir string, rpzEnabled bool) string {
 	return cacheSize
 }
 
-func restartKresdProper(projectDir string) {
-	// Restart in place with plain docker stop/start — never docker compose.
-	// The backend runs inside the stack with the repo mounted at /project, and
-	// compose from in here fails in two ways: without -p it targets a phantom
-	// "project" stack (directory-derived name), and even with -p, `up -d` may
-	// RECREATE the container with /project/... bind sources the host daemon
-	// cannot resolve, leaving kresd stuck in Created and DNS down (bind mounts
-	// are sent to the daemon as the paths this container sees, not host paths).
-	// stop/start reuses the existing container config, so no paths are resolved.
+// restartKresdVerified restarts kresd and VERIFIES it actually resolves again.
+// Every step's error is checked and any failure raises a system alert — this
+// path failed silently twice before (phantom compose project on 216, container
+// stuck in Created on 212) while logging success.
+//
+// Restart is in place with plain docker stop/start — never docker compose.
+// The backend runs inside the stack with the repo mounted at /project, and
+// compose from in here fails in two ways: without -p it targets a phantom
+// "project" stack (directory-derived name), and even with -p, `up -d` may
+// RECREATE the container with /project/... bind sources the host daemon
+// cannot resolve, leaving kresd stuck in Created and DNS down (bind mounts
+// are sent to the daemon as the paths this container sees, not host paths).
+// stop/start reuses the existing container config, so no paths are resolved.
+func (s *Server) restartKresdVerified() error {
+	const alertKind = "kresd-restart"
+	fail := func(step string, err error, out []byte) error {
+		msg := fmt.Sprintf("Restart kresd GAGAL pada langkah %s: %v (%s)", step, err, strings.TrimSpace(string(out)))
+		s.fireSystemAlert(alertKind, msg)
+		return fmt.Errorf("%s", msg)
+	}
+
 	kresd := findContainerName("kresd")
 	dnstap := findContainerName("dnstap-ingester")
 	if kresd == "" || dnstap == "" {
-		log.Printf("restartKresdProper: container not found (kresd=%q dnstap=%q) — skipping restart", kresd, dnstap)
-		return
+		return fail("lookup", fmt.Errorf("container tidak ditemukan (kresd=%q dnstap=%q)", kresd, dnstap), nil)
 	}
 
 	// dnstap-ingester must be up first: it creates the Unix socket kresd dials.
-	exec.Command("docker", "stop", kresd, dnstap).Run()
-
-	exec.Command("docker", "start", dnstap).Run()
-
+	if out, err := exec.Command("docker", "stop", kresd, dnstap).CombinedOutput(); err != nil {
+		return fail("stop", err, out)
+	}
+	if out, err := exec.Command("docker", "start", dnstap).CombinedOutput(); err != nil {
+		return fail("start dnstap-ingester", err, out)
+	}
 	time.Sleep(2 * time.Second)
+	if out, err := exec.Command("docker", "start", kresd).CombinedOutput(); err != nil {
+		return fail("start kresd", err, out)
+	}
 
-	exec.Command("docker", "start", kresd).Run()
-
-	log.Println("kresd restarted with proper sequence (dnstap-ingester first)")
+	// Verify: poll until kresd answers a real query. RPZ policy-loader can hold
+	// workers back for up to ~3 minutes on a fresh zone, so allow 5.
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		if ok, _ := digAnswers("kresd", "google.com"); ok {
+			log.Println("kresd restarted and verified answering (dnstap-ingester first)")
+			s.resolveSystemAlert(alertKind, "kresd kembali menjawab query setelah restart.")
+			return nil
+		}
+		time.Sleep(10 * time.Second)
+	}
+	return fail("verifikasi", fmt.Errorf("kresd tidak menjawab query dalam 5 menit setelah restart"), nil)
 }
 
 // isValidRPZOwner validates an RPZ owner name for strict libknot compatibility.
@@ -338,7 +363,7 @@ func (s *Server) handleUpdateRPZConfig(w http.ResponseWriter, r *http.Request) {
 	if needRestart {
 		rpzCfg := s.getRPZConfig()
 		s.regenerateKresdConfig(rpzCfg.Enabled)
-		restartKresdProper(s.cfg.ProjectDir)
+		s.restartKresdVerified()
 	}
 
 	writeJSON(w, map[string]string{"message": "RPZ config updated"})
@@ -534,7 +559,7 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 	if cfg.Enabled {
 		sendEvent("[INFO] Applying to DNS resolver via native RPZ (shared ruledb)...")
 		s.regenerateKresdConfig(true)
-		restartKresdProper(s.cfg.ProjectDir)
+		s.restartKresdVerified()
 		sendEvent("[OK] DNS resolver restarted — policy-loader sedang memuat RPZ zone ke ruledb...")
 		sendEvent(fmt.Sprintf("[INFO] Loading %d domain ke shared LMDB database. Proses ini berjalan di background.", domainCount))
 	} else {
@@ -1098,7 +1123,7 @@ func (s *Server) doRPZSyncBackground() {
 
 	if cfg.Enabled {
 		s.regenerateKresdConfig(true)
-		restartKresdProper(s.cfg.ProjectDir)
+		s.restartKresdVerified()
 		log.Println("RPZ auto-sync: kresd restarted with updated zone")
 	}
 }
