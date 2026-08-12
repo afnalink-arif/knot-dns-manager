@@ -114,16 +114,23 @@ func resolveCacheSize(envCacheSize, projectDir string, rpzEnabled bool) string {
 func restartKresdProper(projectDir string) {
 	composeFile := filepath.Join(projectDir, "docker-compose.yml")
 
-	exec.Command("docker", "compose", "-f", composeFile,
-		"stop", "kresd", "dnstap-ingester").Run()
+	// The backend runs inside the compose stack with the project mounted at
+	// /project, so compose's directory-derived project name here is "project" —
+	// not the real stack's. Without -p, stop/up silently target a phantom
+	// "project" stack: kresd keeps running with the old ruledb while duplicate
+	// project-* containers get created next to the real ones.
+	compose := []string{"compose", "-f", composeFile}
+	if project := detectProjectName(); project != "" {
+		compose = append(compose, "-p", project)
+	}
 
-	exec.Command("docker", "compose", "-f", composeFile,
-		"up", "-d", "dnstap-ingester").Run()
+	exec.Command("docker", append(compose, "stop", "kresd", "dnstap-ingester")...).Run()
+
+	exec.Command("docker", append(compose, "up", "-d", "dnstap-ingester")...).Run()
 
 	time.Sleep(2 * time.Second)
 
-	exec.Command("docker", "compose", "-f", composeFile,
-		"up", "-d", "kresd").Run()
+	exec.Command("docker", append(compose, "up", "-d", "kresd")...).Run()
 
 	log.Println("kresd restarted with proper sequence (dnstap-ingester first)")
 }

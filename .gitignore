@@ -13,5 +13,7 @@ config/kresd/config.yaml
 # RPZ zone files (downloaded via AXFR, ~1 GB)
 config/kresd/rpz.zone
 config/kresd/rpz.zone.*
-dns.md
-dns.md
+
+# Internal docs / project memory stay off the public repo — only README.md ships
+*.md
+!README.md
