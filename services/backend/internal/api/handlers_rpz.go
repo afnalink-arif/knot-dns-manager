@@ -112,25 +112,29 @@ func resolveCacheSize(envCacheSize, projectDir string, rpzEnabled bool) string {
 }
 
 func restartKresdProper(projectDir string) {
-	composeFile := filepath.Join(projectDir, "docker-compose.yml")
-
-	// The backend runs inside the compose stack with the project mounted at
-	// /project, so compose's directory-derived project name here is "project" —
-	// not the real stack's. Without -p, stop/up silently target a phantom
-	// "project" stack: kresd keeps running with the old ruledb while duplicate
-	// project-* containers get created next to the real ones.
-	compose := []string{"compose", "-f", composeFile}
-	if project := detectProjectName(); project != "" {
-		compose = append(compose, "-p", project)
+	// Restart in place with plain docker stop/start — never docker compose.
+	// The backend runs inside the stack with the repo mounted at /project, and
+	// compose from in here fails in two ways: without -p it targets a phantom
+	// "project" stack (directory-derived name), and even with -p, `up -d` may
+	// RECREATE the container with /project/... bind sources the host daemon
+	// cannot resolve, leaving kresd stuck in Created and DNS down (bind mounts
+	// are sent to the daemon as the paths this container sees, not host paths).
+	// stop/start reuses the existing container config, so no paths are resolved.
+	kresd := findContainerName("kresd")
+	dnstap := findContainerName("dnstap-ingester")
+	if kresd == "" || dnstap == "" {
+		log.Printf("restartKresdProper: container not found (kresd=%q dnstap=%q) — skipping restart", kresd, dnstap)
+		return
 	}
 
-	exec.Command("docker", append(compose, "stop", "kresd", "dnstap-ingester")...).Run()
+	// dnstap-ingester must be up first: it creates the Unix socket kresd dials.
+	exec.Command("docker", "stop", kresd, dnstap).Run()
 
-	exec.Command("docker", append(compose, "up", "-d", "dnstap-ingester")...).Run()
+	exec.Command("docker", "start", dnstap).Run()
 
 	time.Sleep(2 * time.Second)
 
-	exec.Command("docker", append(compose, "up", "-d", "kresd")...).Run()
+	exec.Command("docker", "start", kresd).Run()
 
 	log.Println("kresd restarted with proper sequence (dnstap-ingester first)")
 }
