@@ -634,6 +634,12 @@ func (s *Server) regenerateKresdConfig(includeRPZ bool) {
 	templatePath := filepath.Join(projectDir, "config/kresd/config.yaml.template")
 	configPath := filepath.Join(projectDir, "config/kresd/config.yaml")
 
+	// Invalidate the warm-ruledb marker: views and custom filter rules live in
+	// the ruledb too, so a config regeneration must force policy-loader to do
+	// a full rebuild on the next kresd start (see policy-loader.lua.j2).
+	// The kresd-ruledb volume is mounted at /ruledb in this container.
+	os.Remove("/ruledb/.zone-ok")
+
 	templateData, err := os.ReadFile(templatePath)
 	if err != nil {
 		log.Printf("Failed to read kresd template: %v", err)

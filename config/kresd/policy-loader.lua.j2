@@ -33,6 +33,39 @@ log_groups({
 -- Config required for the cache opening
 cache.open({{ cfg.cache.size_max.bytes() }}, 'lmdb://{{ cfg.cache.storage }}')
 
+-- ===== Warm ruledb: skip the full RPZ rebuild when nothing changed =====
+-- kr_rules_init(..., true) below WIPES the ruledb and reloading 18.9M
+-- entries takes ~3 minutes with DNS down. The ruledb lives on a persistent
+-- volume now, so when the zone signature (serial|size) matches the marker
+-- written after the last successful load, the old ruledb is still valid
+-- and this loader can exit immediately (restart becomes seconds).
+-- The backend deletes the marker whenever it regenerates config (views/
+-- custom filters also live in the ruledb), forcing a full rebuild then.
+local warm_marker = '/run/knot-resolver/ruledb/.zone-ok'
+local function zone_signature()
+    local f = io.open('/etc/knot-resolver/rpz.zone', 'r')
+    if not f then return nil end
+    local first = f:read('*l') or ''
+    local size = f:seek('end')
+    f:close()
+    local serial = first:match('SOA%s+%S+%s+%S+%s+(%d+)')
+    if not serial then return nil end
+    return serial .. '|' .. tostring(size)
+end
+local warm_sig = zone_signature()
+if warm_sig then
+    local m = io.open(warm_marker, 'r')
+    if m then
+        local old = m:read('*l')
+        m:close()
+        if old == warm_sig then
+            print('policy-loader: ruledb warm (zone ' .. warm_sig .. ' unchanged) — skipping reload')
+            quit()
+        end
+    end
+end
+-- ===== end warm ruledb check =====
+
 -- Reinitialize ruledb with larger mapsize for large RPZ files (6GB)
 assert(C.kr_rules_init(nil, 8589934592, true) == 0)
 
@@ -49,6 +82,15 @@ assert(C.kr_rules_init(nil, 8589934592, true) == 0)
 -- Force-disable defer to avoid the default defer config.
 {% set disable_defer = true %}
 {% include "defer.lua.j2" %}
+
+-- Warm ruledb: record the zone signature this ruledb was built from.
+if warm_sig then
+    local m = io.open(warm_marker, 'w')
+    if m then
+        m:write(warm_sig, '\n')
+        m:close()
+    end
+end
 
 {% endif %}
 
