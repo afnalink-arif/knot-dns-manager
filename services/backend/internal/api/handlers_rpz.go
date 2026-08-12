@@ -997,6 +997,10 @@ func (s *Server) doRPZSyncBackground() {
 	rpzFile := filepath.Join(rpzDir, "rpz.zone")
 	tmpFile := rpzFile + ".tmp"
 
+	// preDownloaded is set when the IXFR attempt came back as a full zone —
+	// that download is reused instead of running AXFR again.
+	var preDownloaded string
+
 	// Serial pre-check: a full AXFR is ~1.1GB and ends in a kresd restart that
 	// reloads the whole ruledb. Komdigi only bumps the serial when the blocklist
 	// changes, so when ours already matches there is nothing to fetch. Skipped
@@ -1020,14 +1024,58 @@ func (s *Server) doRPZSyncBackground() {
 						int(time.Since(startTime).Milliseconds()))
 					return
 				}
-				log.Printf("RPZ auto-sync: serial %d -> %d, fetching zone", local, remote)
+				log.Printf("RPZ auto-sync: serial %d -> %d, trying IXFR first", local, remote)
+
+				// IXFR: fetch just the diff instead of the full ~1.5GB zone.
+				redirectIP := loadEnvFile(filepath.Join(s.cfg.ProjectDir, ".env"))["SERVER_IP"]
+				outcome, stats, fullPath := s.tryIXFR(master, cfg.ZoneName, rpzFile, redirectIP, local)
+				switch outcome {
+				case ixfrApplied:
+					domainCount := countRPZDomains(rpzFile, cfg.ZoneName)
+					fileInfo, _ := os.Stat(rpzFile)
+					var fileSize int64
+					if fileInfo != nil {
+						fileSize = fileInfo.Size()
+					}
+					s.updateRPZSyncStatus("success", "", domainCount, fileSize, int(time.Since(startTime).Milliseconds()))
+					s.updateZoneSerial(rpzFile)
+					log.Printf("RPZ auto-sync (IXFR): %d domains, %+d/-%d entries, %v",
+						domainCount, stats.added, stats.deleted, time.Since(startTime).Round(time.Second))
+					if cfg.Enabled {
+						s.regenerateKresdConfig(true)
+						if err := s.restartKresdVerified(); err != nil {
+							s.updateRPZSyncStatus("error", err.Error(), domainCount, fileSize, int(time.Since(startTime).Milliseconds()))
+							return
+						}
+						log.Printf("RPZ auto-sync (IXFR): kresd restarted with updated zone")
+					}
+					return
+				case ixfrUnchanged:
+					s.pg.Exec(context.Background(),
+						`UPDATE rpz_config SET last_sync = NOW(), last_sync_status = 'success',
+						 last_sync_error = '', sync_duration_ms = $1, updated_at = NOW() WHERE id = 1`,
+						int(time.Since(startTime).Milliseconds()))
+					return
+				case ixfrFullTransfer:
+					// Master answered with the full zone — reuse the download as
+					// the AXFR result instead of pulling 1.5GB a second time.
+					os.Remove(tmpFile)
+					if err := os.Rename(fullPath, tmpFile); err == nil {
+						preDownloaded = master
+					} else {
+						os.Remove(fullPath)
+					}
+				}
+				// ixfrFailed falls through to the plain AXFR loop below.
 				break
 			}
 		}
 	}
 
 	// Cleanup temp files on start and guaranteed cleanup on exit
-	os.Remove(tmpFile)
+	if preDownloaded == "" {
+		os.Remove(tmpFile)
+	}
 	os.Remove(tmpFile + ".converted")
 	defer os.Remove(tmpFile)
 	defer os.Remove(tmpFile + ".converted")
@@ -1036,7 +1084,17 @@ func (s *Server) doRPZSyncBackground() {
 	var axfrErr error
 	var sawRefusal bool
 
+	if preDownloaded != "" {
+		if info, err := os.Stat(tmpFile); err == nil && info.Size() > 10*1024 {
+			usedMaster = preDownloaded
+			log.Printf("RPZ auto-sync: reusing %.1f MB full transfer from IXFR fallback", float64(info.Size())/1024/1024)
+		}
+	}
+
 	for _, master := range masters {
+		if usedMaster != "" {
+			break // full transfer already in hand from the IXFR fallback
+		}
 		master = strings.TrimSpace(master)
 		if master == "" {
 			continue
