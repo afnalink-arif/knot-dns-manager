@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -149,6 +150,83 @@ func isValidRPZOwner(owner string) bool {
 	return true
 }
 
+// parseSOASerial extracts the serial from an SOA record line. Handles both the
+// full record form ("zone. 900 IN SOA mname rname SERIAL ...") and dig +short
+// output ("mname rname SERIAL ..."). Komdigi's serial is YYMMDDNN, e.g. 26081205.
+func parseSOASerial(line string) uint64 {
+	f := strings.Fields(line)
+	idx := -1
+	for i, tok := range f {
+		if strings.EqualFold(tok, "SOA") {
+			idx = i + 3 // skip SOA, mname, rname
+			break
+		}
+	}
+	if idx == -1 {
+		idx = 2 // +short form: mname rname serial
+	}
+	if idx >= len(f) {
+		return 0
+	}
+	serial, err := strconv.ParseUint(f[idx], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return serial
+}
+
+// remoteZoneSerial asks a master for the zone's current serial over UDP — cheap
+// (one packet) compared to the ~1.1GB AXFR it may let us skip.
+func remoteZoneSerial(master, zone string) uint64 {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "dig", "SOA", zone, "@"+master,
+		"+short", "+time=5", "+tries=2", "+noidnout").Output()
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if serial := parseSOASerial(line); serial != 0 {
+			return serial
+		}
+	}
+	return 0
+}
+
+// localZoneSerial reads the serial from the SOA at the head of the local zone file.
+func localZoneSerial(path string) uint64 {
+	head, err := readFileHead(path, 4096)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(head, "\n") {
+		if strings.Contains(strings.ToUpper(line), "SOA") {
+			return parseSOASerial(line)
+		}
+	}
+	return 0
+}
+
+// classifyAXFRError turns a failed sync into an actionable message.
+//
+// The two failure modes need opposite responses and must not be conflated:
+//   - dig exits 9 ("no reply from server") when the master never answered —
+//     unreachable host, blocked TCP/53, or a dead master. Registration is fine.
+//   - a master that answers but returns only SOA/NS (a few hundred bytes) is
+//     refusing the transfer — that is the "IP not registered/approved" case.
+func classifyAXFRError(err error, sawRefusal bool) string {
+	if sawRefusal {
+		return "Zone transfer ditolak master (hanya SOA/NS yang dikirim) — IP server ini kemungkinan belum di-approve Komdigi. Cek status di s.komdigi.go.id/FormKoneksiRPZ"
+	}
+	if err != nil && strings.Contains(err.Error(), "exit status 9") {
+		return "Tidak ada balasan dari master server (dig exit 9) — host unreachable, TCP/53 diblokir, atau master sudah tidak aktif. Ini bukan masalah registrasi IP; cek konektivitas dan daftar master server."
+	}
+	if err != nil {
+		return fmt.Sprintf("Zone transfer gagal: %v", err)
+	}
+	return "Semua master server gagal memberikan zone data."
+}
+
 type RPZConfig struct {
 	Enabled              bool       `json:"enabled"`
 	MasterServers        string     `json:"master_servers"`
@@ -162,11 +240,19 @@ type RPZConfig struct {
 	AutoSyncEnabled      bool       `json:"auto_sync_enabled"`
 	AutoSyncIntervalHrs  int        `json:"auto_sync_interval_hours"`
 	AutoSyncHour         int        `json:"auto_sync_hour"`
+	ZoneSerial           uint64     `json:"zone_serial"`
 }
+
+// komdigiMasters is the official RPZ master list from the Komdigi juknis
+// (Dokumen Ver.260326). 103.154.123.130 was decommissioned — the juknis states
+// "IP 103.154.123.130 sudah tidak digunakan" and it black-holes TCP/53, so keeping
+// it in the list only burns the AXFR timeout and masks the real error (see
+// classifyAXFRError).
+const komdigiMasters = "139.255.196.202,182.23.79.202"
 
 func (s *Server) getRPZConfig() RPZConfig {
 	cfg := RPZConfig{
-		MasterServers:       "139.255.196.202,182.23.79.202,103.154.123.130",
+		MasterServers:       komdigiMasters,
 		ZoneName:            "trustpositifkominfo",
 		AutoSyncIntervalHrs: 24,
 		AutoSyncHour:        2,
@@ -175,11 +261,11 @@ func (s *Server) getRPZConfig() RPZConfig {
 	s.pg.QueryRow(ctx,
 		`SELECT enabled, master_servers, zone_name, last_sync, last_sync_status, last_sync_error,
 		        domain_count, file_size_bytes, sync_duration_ms, auto_sync_enabled, auto_sync_interval_hours,
-		        auto_sync_hour
+		        auto_sync_hour, zone_serial
 		 FROM rpz_config WHERE id = 1`,
 	).Scan(&cfg.Enabled, &cfg.MasterServers, &cfg.ZoneName, &cfg.LastSync, &cfg.LastSyncStatus,
 		&cfg.LastSyncError, &cfg.DomainCount, &cfg.FileSizeBytes, &cfg.SyncDurationMs,
-		&cfg.AutoSyncEnabled, &cfg.AutoSyncIntervalHrs, &cfg.AutoSyncHour)
+		&cfg.AutoSyncEnabled, &cfg.AutoSyncIntervalHrs, &cfg.AutoSyncHour, &cfg.ZoneSerial)
 	return cfg
 }
 
@@ -290,6 +376,7 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 
 	var usedMaster string
 	var axfrErr error
+	var sawRefusal bool
 
 	for _, master := range masters {
 		master = strings.TrimSpace(master)
@@ -337,8 +424,9 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 					sendEvent(fmt.Sprintf("[OK] Got %.1f MB from %s", float64(fileSize)/1024/1024, master))
 					break
 				}
-				// Small response = probably unregistered IP, only got SOA/NS
-				sendEvent(fmt.Sprintf("[WARN] %s returned only %d bytes (possibly IP not registered at Komdigi)", master, fileSize))
+				// Small response = master answered but refused the transfer (only SOA/NS)
+				sawRefusal = true
+				sendEvent(fmt.Sprintf("[WARN] %s returned only %d bytes — transfer ditolak (IP belum di-approve Komdigi?)", master, fileSize))
 			} else if fileSize == 0 {
 				sendEvent(fmt.Sprintf("[WARN] %s returned empty response", master))
 			} else {
@@ -350,10 +438,7 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if usedMaster == "" {
-		errMsg := "Semua master server gagal memberikan zone data. Kemungkinan IP server ini belum terdaftar di Komdigi. Daftar di: https://s.komdigi.go.id/FormKoneksiRPZ"
-		if axfrErr != nil {
-			errMsg = fmt.Sprintf("Zone transfer gagal: %v — Pastikan IP server sudah terdaftar di s.komdigi.go.id/FormKoneksiRPZ", axfrErr)
-		}
+		errMsg := classifyAXFRError(axfrErr, sawRefusal)
 		sendEvent(fmt.Sprintf("[ERROR] %s", errMsg))
 		os.Remove(tmpFile)
 		s.updateRPZSyncStatus("error", errMsg, 0, 0, 0)
@@ -429,6 +514,7 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.updateRPZSyncStatus("success", "", domainCount, fileSize, int(duration.Milliseconds()))
+	s.updateZoneSerial(rpzFile)
 
 	sendEvent(fmt.Sprintf("[OK] Sync complete: %d domains, %.1f MB, %dms",
 		domainCount, float64(fileSize)/1024/1024, duration.Milliseconds()))
@@ -453,27 +539,54 @@ func (s *Server) handleRPZStats(w http.ResponseWriter, r *http.Request) {
 
 	rpzFile := filepath.Join(s.cfg.ProjectDir, "config", "kresd", "rpz.zone")
 	fileExists := false
-	if _, err := os.Stat(rpzFile); err == nil {
+	var actualFileSize int64 = 0
+	if info, err := os.Stat(rpzFile); err == nil {
 		fileExists = true
+		actualFileSize = info.Size()
 	}
 
-	// Get kresd memory usage
+	if cfg.DomainCount == 0 && fileExists && actualFileSize > 100 {
+		cfg.DomainCount = countRPZDomains(rpzFile, cfg.ZoneName)
+		cfg.FileSizeBytes = actualFileSize
+		s.pg.Exec(context.Background(),
+			`UPDATE rpz_config SET domain_count = $1, file_size_bytes = $2 WHERE id = 1`,
+			cfg.DomainCount, cfg.FileSizeBytes)
+	}
+
 	kresdMem := getKresdMemoryMB()
 
 	writeJSON(w, map[string]interface{}{
-		"config":         cfg,
-		"file_exists":    fileExists,
+		"config":          cfg,
+		"file_exists":     fileExists,
+		"actual_file_size": actualFileSize,
 		"kresd_memory_mb": kresdMem,
 	})
+}
+
+// updateZoneSerial records the serial of the zone file now on disk, so the next
+// auto-sync can tell whether Komdigi has published anything new.
+func (s *Server) updateZoneSerial(path string) {
+	serial := localZoneSerial(path)
+	if serial == 0 {
+		return
+	}
+	s.pg.Exec(context.Background(), `UPDATE rpz_config SET zone_serial = $1 WHERE id = 1`, serial)
 }
 
 func (s *Server) updateRPZSyncStatus(status, errMsg string, domainCount int, fileSize int64, durationMs int) {
 	ctx := context.Background()
 	s.pg.Exec(ctx, `INSERT INTO rpz_config (id) VALUES (1) ON CONFLICT DO NOTHING`)
-	s.pg.Exec(ctx,
-		`UPDATE rpz_config SET last_sync = NOW(), last_sync_status = $1, last_sync_error = $2,
-		 domain_count = $3, file_size_bytes = $4, sync_duration_ms = $5, updated_at = NOW() WHERE id = 1`,
-		status, errMsg, domainCount, fileSize, durationMs)
+	if status == "error" {
+		s.pg.Exec(ctx,
+			`UPDATE rpz_config SET last_sync = NOW(), last_sync_status = $1, last_sync_error = $2,
+			 sync_duration_ms = $3, updated_at = NOW() WHERE id = 1`,
+			status, errMsg, durationMs)
+	} else {
+		s.pg.Exec(ctx,
+			`UPDATE rpz_config SET last_sync = NOW(), last_sync_status = $1, last_sync_error = $2,
+			 domain_count = $3, file_size_bytes = $4, sync_duration_ms = $5, updated_at = NOW() WHERE id = 1`,
+			status, errMsg, domainCount, fileSize, durationMs)
+	}
 }
 
 // regenerateKresdConfig rebuilds kresd YAML config.
@@ -848,6 +961,35 @@ func (s *Server) doRPZSyncBackground() {
 	rpzFile := filepath.Join(rpzDir, "rpz.zone")
 	tmpFile := rpzFile + ".tmp"
 
+	// Serial pre-check: a full AXFR is ~1.1GB and ends in a kresd restart that
+	// reloads the whole ruledb. Komdigi only bumps the serial when the blocklist
+	// changes, so when ours already matches there is nothing to fetch. Skipped
+	// only when we have a real zone file on disk to compare against.
+	if info, err := os.Stat(rpzFile); err == nil && info.Size() > 1024 {
+		if local := localZoneSerial(rpzFile); local != 0 {
+			for _, master := range masters {
+				master = strings.TrimSpace(master)
+				if master == "" {
+					continue
+				}
+				remote := remoteZoneSerial(master, cfg.ZoneName)
+				if remote == 0 {
+					continue // master unreachable — fall through to the AXFR attempt
+				}
+				if remote == local {
+					log.Printf("RPZ auto-sync: serial %d unchanged at %s — skipping AXFR", local, master)
+					s.pg.Exec(context.Background(),
+						`UPDATE rpz_config SET last_sync = NOW(), last_sync_status = 'success',
+						 last_sync_error = '', sync_duration_ms = $1, updated_at = NOW() WHERE id = 1`,
+						int(time.Since(startTime).Milliseconds()))
+					return
+				}
+				log.Printf("RPZ auto-sync: serial %d -> %d, fetching zone", local, remote)
+				break
+			}
+		}
+	}
+
 	// Cleanup temp files on start and guaranteed cleanup on exit
 	os.Remove(tmpFile)
 	os.Remove(tmpFile + ".converted")
@@ -856,6 +998,7 @@ func (s *Server) doRPZSyncBackground() {
 
 	var usedMaster string
 	var axfrErr error
+	var sawRefusal bool
 
 	for _, master := range masters {
 		master = strings.TrimSpace(master)
@@ -879,15 +1022,13 @@ func (s *Server) doRPZSyncBackground() {
 					log.Printf("RPZ auto-sync: got %.1f MB from %s", float64(info.Size())/1024/1024, master)
 					break
 				}
+				sawRefusal = true
 			}
 		}
 	}
 
 	if usedMaster == "" {
-		errMsg := "auto-sync: semua master server gagal"
-		if axfrErr != nil {
-			errMsg = fmt.Sprintf("auto-sync: %v", axfrErr)
-		}
+		errMsg := "auto-sync: " + classifyAXFRError(axfrErr, sawRefusal)
 		log.Printf("RPZ %s", errMsg)
 		os.Remove(tmpFile)
 		s.updateRPZSyncStatus("error", errMsg, 0, 0, int(time.Since(startTime).Milliseconds()))
@@ -941,6 +1082,7 @@ func (s *Server) doRPZSyncBackground() {
 	}
 
 	s.updateRPZSyncStatus("success", "", domainCount, fileSize, int(duration.Milliseconds()))
+	s.updateZoneSerial(rpzFile)
 	log.Printf("RPZ auto-sync complete: %d domains, %.1f MB, %v", domainCount, float64(fileSize)/1024/1024, duration.Round(time.Second))
 
 	if cfg.Enabled {

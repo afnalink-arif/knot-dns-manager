@@ -306,7 +306,7 @@ func initPostgres(pool *pgxpool.Pool) error {
 		`CREATE TABLE IF NOT EXISTS rpz_config (
 			id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
 			enabled BOOLEAN NOT NULL DEFAULT false,
-			master_servers TEXT NOT NULL DEFAULT '139.255.196.202,182.23.79.202,103.154.123.130',
+			master_servers TEXT NOT NULL DEFAULT '139.255.196.202,182.23.79.202',
 			zone_name VARCHAR(255) NOT NULL DEFAULT 'trustpositifkominfo',
 			last_sync TIMESTAMPTZ,
 			last_sync_status VARCHAR(20) DEFAULT '',
@@ -323,10 +323,15 @@ func initPostgres(pool *pgxpool.Pool) error {
 		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS auto_sync_enabled BOOLEAN NOT NULL DEFAULT false`,
 		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS auto_sync_interval_hours INT NOT NULL DEFAULT 24`,
 		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS auto_sync_hour INT NOT NULL DEFAULT 2`,
+		// Add zone_serial: lets auto-sync skip a 1.1GB AXFR when Komdigi's serial is unchanged
+		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS zone_serial BIGINT NOT NULL DEFAULT 0`,
 		// Seed rpz_config row + migrate old master_servers
-		`INSERT INTO rpz_config (id, master_servers) VALUES (1, '139.255.196.202,182.23.79.202,103.154.123.130') ON CONFLICT DO NOTHING`,
-		`UPDATE rpz_config SET master_servers = '139.255.196.202,182.23.79.202,103.154.123.130'
-		 WHERE id = 1 AND master_servers = '103.154.123.130,139.255.196.202'`,
+		`INSERT INTO rpz_config (id, master_servers) VALUES (1, '139.255.196.202,182.23.79.202') ON CONFLICT DO NOTHING`,
+		// Drop the decommissioned master (juknis Ver.260326: "IP 103.154.123.130 sudah tidak
+		// digunakan"). It black-holes TCP/53, so it only adds AXFR timeout and, being last in
+		// the list, its "no reply" became the error recorded for the whole sync.
+		`UPDATE rpz_config SET master_servers = '139.255.196.202,182.23.79.202', updated_at = NOW()
+		 WHERE id = 1 AND master_servers LIKE '%103.154.123.130%'`,
 		`CREATE TABLE IF NOT EXISTS blockpage_config (
 			id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
 			title VARCHAR(255) NOT NULL DEFAULT 'Akses Diblokir',

@@ -57,12 +57,36 @@ Other replicas pull from git and run `./update.sh`.
 - **iptables not persistent by default**: Already saved to /etc/iptables/rules.v4 via iptables-persistent
 - **Admin password**: Already changed from default
 
+## RPZ Komdigi — Registrasi & Sync
+
+Sumber: surat/juknis Komdigi Ver.260326. ISP AFNALINK, **AS149723**.
+
+- **Master resmi**: `139.255.196.202`, `182.23.79.202`. IP lama `103.154.123.130` **sudah tidak
+  digunakan** — dihapus dari default & dimigrasi keluar dari `rpz_config` (black-hole TCP/53).
+- **Zone**: `trustpositifkominfo`. Serial `YYMMDDNN` (mis. `26081205` = 12 Agu 2026 build 05).
+- **Status IP**: 212 APPROVED · 238 APPROVED · **216 PENDING** (AXFR-nya faktanya jalan, diduga
+  ACL prefix — jangan diandalkan, selesaikan approval di portal).
+- Hanya IP approved yang boleh AXFR. Portal: https://integrasipenapisan.komdigi.go.id
+- **Auto-sync cek serial SOA dulu**; kalau serial sama, AXFR 1.1 GB dan restart kresd dilewati.
+  Sync manual dari dashboard selalu force full transfer.
+- **Diagnosa gagal sync**: respons hanya SOA/NS (ratusan byte) = transfer ditolak → IP belum
+  approved. `dig` exit status 9 = *no reply from server* (unreachable / TCP 53 diblokir / master
+  mati) → **bukan** masalah registrasi. Jangan tertukar (lihat `classifyAXFRError`).
+- **Stagger `auto_sync_hour` antar server** — 216 & 212 melayani subnet yang sama; reload RPZ
+  menahan kresd 40 detik–3 menit, jangan sampai barengan.
+
+## Dokumentasi
+
+`dns.md` masuk `.gitignore`, jadi **tidak ikut ter-deploy ke replica**. Sumber tunggalnya ada di
+`/root/dns.md` pada VM 216 saja. Salinan `/root/knot-dns-monitor/dns.md` adalah sisa lama yang
+sudah usang — abaikan, jangan diedit.
+
 ## Swap Status Fleet
 
 | Server | Swap | Status |
 |--------|------|--------|
-| VM 216 | TBD | Perlu setup |
-| VM 212 | TBD | Perlu setup |
+| VM 216 | 4 GB | Aktif |
+| VM 212 | 4 GB | Aktif |
 | VM 238 | 4 GB | Aktif |
 
 ## Tech Stack
