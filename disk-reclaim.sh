@@ -128,20 +128,66 @@ if [ "$USAGE_AFTER" -ge "$DISK_WARN_PERCENT" ]; then
 fi
 
 # 7. Adjust kresd cache size if it changed
-if [ -f "${PROJECT_DIR}/calculate-cache-size.sh" ]; then
+#
+# This block restarts kresd, so it is the single most dangerous thing this
+# cron does. It caused repeated fleet outages on 12-13 Aug 2026 and has been
+# tightened on four counts — do not loosen any of them casually:
+#
+#   1. A pinned CACHE_SIZE is honoured. Recalculating from free disk every
+#      night made the cache flap (216 went 256M -> 7G at 03:00, then back to
+#      256M at 04:25 when an update ran while a docker build held the disk).
+#      Every flap costs a kresd restart.
+#   2. Small changes are ignored. Without hysteresis, ordinary disk noise was
+#      enough to trigger a restart.
+#   3. --no-deps, so bringing kresd up cannot drag the rest of the stack with it.
+#   4. dnsdist is restarted AFTER kresd. It resolves the kresd backend IP once
+#      at startup, so a recreated kresd leaves it forwarding to a dead address:
+#      port 53 goes dark while every health check stays green. This step was
+#      missing entirely, which is how the resolver kept dying overnight.
+PINNED_CACHE=""
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    PINNED_CACHE=$(grep -E '^CACHE_SIZE=' "${PROJECT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d ' ')
+fi
+
+cache_to_mb() {
+    case "$1" in
+        *G|*g) echo $(( ${1%[Gg]} * 1024 )) ;;
+        *M|*m) echo "${1%[Mm]}" ;;
+        *)     echo 0 ;;
+    esac
+}
+
+if [ -n "$PINNED_CACHE" ] && [ "$PINNED_CACHE" != "auto" ]; then
+    log "kresd cache pinned to ${PINNED_CACHE} in .env — skipping automatic resize"
+elif [ -f "${PROJECT_DIR}/calculate-cache-size.sh" ]; then
     # shellcheck source=./calculate-cache-size.sh
     source "${PROJECT_DIR}/calculate-cache-size.sh"
     NEW_CACHE=$(calculate_cache_size)
     CURRENT_CACHE=$(grep 'size-max:' "${PROJECT_DIR}/config/kresd/config.yaml" 2>/dev/null | awk '{print $2}' || echo "")
-    if [ -n "$NEW_CACHE" ] && [ "$NEW_CACHE" != "$CURRENT_CACHE" ]; then
-        log "Adjusting kresd cache: ${CURRENT_CACHE} -> ${NEW_CACHE}"
+
+    NEW_MB=$(cache_to_mb "$NEW_CACHE")
+    CUR_MB=$(cache_to_mb "$CURRENT_CACHE")
+
+    # Restart only for a change worth the downtime: at least 512M of movement
+    # AND at least 25% of the current size.
+    DELTA=$(( NEW_MB > CUR_MB ? NEW_MB - CUR_MB : CUR_MB - NEW_MB ))
+    THRESHOLD=$(( CUR_MB / 4 ))
+    [ "$THRESHOLD" -lt 512 ] && THRESHOLD=512
+
+    if [ -n "$NEW_CACHE" ] && [ "$NEW_CACHE" != "$CURRENT_CACHE" ] && [ "$NEW_MB" -gt 0 ] && [ "$DELTA" -ge "$THRESHOLD" ]; then
+        log "Adjusting kresd cache: ${CURRENT_CACHE} -> ${NEW_CACHE} (delta ${DELTA}M >= ${THRESHOLD}M)"
         sed -i "s/size-max: .*/size-max: ${NEW_CACHE}/" "${PROJECT_DIR}/config/kresd/config.yaml"
         # Restart kresd to apply new cache size
         docker compose stop kresd dnstap-ingester 2>/dev/null || true
-        docker compose up -d dnstap-ingester 2>/dev/null || true
+        docker compose up -d --no-deps dnstap-ingester 2>/dev/null || true
         sleep 2
-        docker compose up -d kresd 2>/dev/null || true
-        log "kresd restarted with cache ${NEW_CACHE}"
+        docker compose up -d --no-deps kresd 2>/dev/null || true
+        sleep 2
+        # MUST come after kresd: re-resolve the backend IP (see note above).
+        docker compose restart dnsdist 2>/dev/null || true
+        log "kresd restarted with cache ${NEW_CACHE}; dnsdist re-resolved"
+    elif [ -n "$NEW_CACHE" ] && [ "$NEW_CACHE" != "$CURRENT_CACHE" ]; then
+        log "kresd cache ${CURRENT_CACHE} -> ${NEW_CACHE} below hysteresis (delta ${DELTA}M < ${THRESHOLD}M) — not restarting"
     fi
 fi
 
