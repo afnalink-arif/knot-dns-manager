@@ -90,7 +90,7 @@ export default function LoginPage() {
               { label: t("login.feat.cluster"), desc: t("login.feat.cluster_desc") },
             ].map(f => (
               <div class="p-3 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                <p class="text-xs font-medium text-white">{f.label}</p>
+                <p class="text-xs font-medium text-[var(--color-text)]">{f.label}</p>
                 <p class="text-[10px] text-slate-500 mt-0.5">{f.desc}</p>
               </div>
             ))}
@@ -108,12 +108,12 @@ export default function LoginPage() {
 
           <div class="mb-6">
             <div class="flex items-center justify-between">
-              <h2 class="text-xl font-semibold text-white">
+              <h2 class="text-xl font-semibold text-[var(--color-text)]">
                 {setupMode() ? t("login.create_admin") : t("login.sign_in")}
               </h2>
               <button
                 onClick={() => setLang(getLang() === "en" ? "id" : "en")}
-                class="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-white hover:bg-white/5 transition-colors font-mono"
+                class="px-2 py-1 rounded text-[11px] text-slate-500 hover:text-[var(--color-text)] hover:bg-white/5 transition-colors font-mono"
               >
                 {getLang() === "en" ? "EN" : "ID"}
               </button>
@@ -144,7 +144,7 @@ export default function LoginPage() {
                 type="text"
                 required
                 autofocus
-                class="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition"
+                class="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-sm text-[var(--color-text)] placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition"
                 placeholder="admin"
                 value={username()}
                 onInput={(e) => setUsername(e.target.value)}
@@ -155,7 +155,7 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
-                class="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition"
+                class="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-sm text-[var(--color-text)] placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition"
                 placeholder={setupMode() ? t("login.password_min") : t("login.password_placeholder")}
                 value={password()}
                 onInput={(e) => setPassword(e.target.value)}
@@ -165,7 +165,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading()}
-              class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-blue-800 disabled:to-blue-900 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-blue-600/20"
+              class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:from-blue-800 disabled:to-blue-900 disabled:cursor-not-allowed text-[var(--color-text)] text-sm font-medium rounded-lg transition-all shadow-lg shadow-blue-600/20"
             >
               {loading() ? t("login.please_wait") : setupMode() ? t("login.submit_setup") : t("login.submit")}
             </button>

@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
-/* Remap slate palette darker for unified dark theme */
+/*
+ * Theming strategy
+ * ----------------
+ * Tailwind v4 compiles `bg-slate-800` to `background-color: var(--color-slate-800)`.
+ * The whole app was written against that dark slate ramp, so instead of rewriting
+ * ~5000 lines of markup we redefine the ramp itself per theme. Light mode INVERTS
+ * the scale: slate-900 (the darkest page background) becomes the lightest surface,
+ * slate-300/400 (muted text) land mid-grey and stay readable on both.
+ *
+ * Consequence to remember: `text-white` is NOT themed — it stays literal white, so
+ * it is correct only on saturated buttons/badges. Text sitting on a surface must
+ * use `text-[var(--color-text)]`.
+ */
+
 @theme {
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
@@ -16,7 +29,7 @@
 }
 
 :root {
-  /* Brand blues */
+  /* Brand blues — identical in both themes */
   --color-brand-50: #eff6ff;
   --color-brand-100: #dbeafe;
   --color-brand-400: #60a5fa;
@@ -24,7 +37,6 @@
   --color-brand-600: #2563eb;
   --color-brand-700: #1d4ed8;
 
-  /* Semantic */
   --color-primary: var(--color-brand-500);
   --color-success: #22c55e;
   --color-warning: #eab308;
@@ -41,6 +53,61 @@
   --color-text: #f1f5f9;
   --color-text-muted: #94a3b8;
   --color-text-faint: #4b5563;
+
+  /* Glass */
+  --glass-bg: rgb(17 24 39 / 0.55);
+  --glass-bg-strong: rgb(10 15 28 / 0.75);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.06);
+  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.37);
+  --glass-blur: 16px;
+
+  /* Aurora wash behind the glass */
+  --aurora-1: rgb(59 130 246 / 0.16);
+  --aurora-2: rgb(139 92 246 / 0.12);
+  --aurora-3: rgb(14 165 233 / 0.10);
+
+  --scrollbar-thumb: #1f2937;
+  --scrollbar-thumb-hover: #374151;
+}
+
+/* ---------- Light theme ---------- */
+:root[data-theme="light"] {
+  /* Inverted slate ramp */
+  --color-slate-50: #0f172a;
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #eef2f7;
+  --color-slate-900: #f8fafc;
+  --color-slate-950: #ffffff;
+
+  --color-bg: #f4f7fb;
+  --color-bg-card: #ffffff;
+  --color-bg-sidebar: #ffffff;
+  --color-border: #e2e8f0;
+  --color-border-subtle: #eef2f7;
+
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+  --color-text-faint: #94a3b8;
+
+  --glass-bg: rgb(255 255 255 / 0.62);
+  --glass-bg-strong: rgb(255 255 255 / 0.82);
+  --glass-border: rgb(15 23 42 / 0.08);
+  --glass-highlight: rgb(255 255 255 / 0.65);
+  --glass-shadow: 0 8px 32px rgb(15 23 42 / 0.10);
+
+  --aurora-1: rgb(59 130 246 / 0.18);
+  --aurora-2: rgb(139 92 246 / 0.14);
+  --aurora-3: rgb(14 165 233 / 0.12);
+
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
 }
 
 body {
@@ -50,13 +117,80 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #374151; }
+/*
+ * Aurora backdrop. Glassmorphism only reads as glass when there is something
+ * behind it worth blurring, so the page carries a fixed, non-interactive wash.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, var(--aurora-1), transparent 60%),
+    radial-gradient(50rem 35rem at 88% 8%, var(--aurora-2), transparent 62%),
+    radial-gradient(45rem 45rem at 50% 105%, var(--aurora-3), transparent 60%);
+}
 
-/* uPlot overrides for dark theme */
+/* Keep app content above the wash */
+#app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Glass utilities ---------- */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Hairline sheen along the top edge — sells the "pane of glass" read */
+.glass-sheen {
+  position: relative;
+}
+.glass-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-highlight), transparent);
+  pointer-events: none;
+}
+
+/* Fall back to an opaque surface where backdrop-filter is unsupported */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass,
+  .glass-strong {
+    background: var(--color-bg-card);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* uPlot follows the active theme */
 .u-wrap { background: transparent !important; }
 .u-legend { color: var(--color-text-muted) !important; font-size: 0.75rem !important; }
 .u-legend .u-marker { width: 8px !important; height: 8px !important; }

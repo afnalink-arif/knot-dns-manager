@@ -12,11 +12,11 @@ interface KPICardProps {
 
 const KPICard: Component<KPICardProps> = (props) => {
   return (
-    <div class="bg-[var(--color-bg-card)] rounded-xl p-5 border border-[var(--color-border)] hover:border-[var(--color-border)]/80 transition-colors">
+    <div class="glass glass-sheen rounded-xl p-5 hover:border-[var(--color-brand-500)]/30 transition-colors">
       <div class="flex items-start justify-between">
         <div>
           <p class="text-xs text-[var(--color-text-muted)] mb-1">{props.title}</p>
-          <p class="text-2xl font-bold text-white">{props.value}</p>
+          <p class="text-2xl font-bold text-[var(--color-text)]">{props.value}</p>
           {props.subtitle && (
             <p class="text-[11px] text-[var(--color-text-faint)] mt-1">{props.subtitle}</p>
           )}

@@ -97,7 +97,7 @@ export default function Overview() {
         {/* Header */}
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold text-white">Overview</h1>
+            <h1 class="text-2xl font-bold text-[var(--color-text)]">Overview</h1>
             <p class="text-sm text-slate-400 mt-1">
               Knot Resolver real-time monitoring
               <span class={`ml-2 inline-flex items-center gap-1 text-xs ${connected() ? "text-emerald-400" : "text-slate-400"}`}>
@@ -235,7 +235,7 @@ export default function Overview() {
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <p class="text-slate-500">Total Queries</p>
-              <p class="text-lg font-medium text-white">
+              <p class="text-lg font-medium text-[var(--color-text)]">
                 {overview()?.qps ? (() => {
                   const r = overview()!.qps?.data?.result;
                   return r?.[0] ? "Active" : "Idle";
@@ -248,7 +248,7 @@ export default function Overview() {
             </div>
             <div>
               <p class="text-slate-500">Cache Size</p>
-              <p class="text-lg font-medium text-white">{resolver()?.cache?.["size-max"] || "--"}</p>
+              <p class="text-lg font-medium text-[var(--color-text)]">{resolver()?.cache?.["size-max"] || "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">Serve Stale</p>

@@ -39,7 +39,7 @@ export default function AlertsPage() {
       <div class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold text-white">Alerts</h1>
+            <h1 class="text-2xl font-bold text-[var(--color-text)]">Alerts</h1>
             <p class="text-sm text-slate-400 mt-1">Alert rules and notification management</p>
           </div>
           <button
@@ -53,7 +53,7 @@ export default function AlertsPage() {
         {/* Create Alert Form */}
         <Show when={showForm()}>
           <div class="bg-slate-800 rounded-xl p-5 border border-blue-500/30">
-            <h3 class="text-sm font-medium text-white mb-4">Create Alert Rule</h3>
+            <h3 class="text-sm font-medium text-[var(--color-text)] mb-4">Create Alert Rule</h3>
             <form onSubmit={handleSubmit} class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs text-slate-400 mb-1">Name</label>

@@ -120,7 +120,7 @@ export default function DNSLookupPage() {
       <div class="space-y-5">
         {/* Header */}
         <div>
-          <h1 class="text-xl font-bold text-white">DNS Lookup</h1>
+          <h1 class="text-xl font-bold text-[var(--color-text)]">DNS Lookup</h1>
           <p class="text-xs text-slate-500 mt-1">Test DNS resolution directly from the dashboard</p>
         </div>
 
@@ -136,7 +136,7 @@ export default function DNSLookupPage() {
                 value={domain()}
                 onInput={(e) => setDomain(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && doLookup()}
-                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition font-mono"
+                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition font-mono"
                 autofocus
               />
             </div>
@@ -147,7 +147,7 @@ export default function DNSLookupPage() {
               <select
                 value={qtype()}
                 onChange={(e) => setQtype(e.target.value)}
-                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
               >
                 <For each={RECORD_TYPES}>
                   {(t) => <option value={t}>{t}</option>}
@@ -161,7 +161,7 @@ export default function DNSLookupPage() {
               <select
                 value={server()}
                 onChange={(e) => setServer(e.target.value)}
-                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                class="w-full bg-slate-900/70 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
               >
                 <For each={SERVERS}>
                   {(s) => <option value={s.value}>{s.label}</option>}
@@ -195,7 +195,7 @@ export default function DNSLookupPage() {
                 <button
                   type="button"
                   onClick={() => { setDomain(d); setTimeout(doLookup, 50); }}
-                  class="px-2 py-0.5 text-[10px] bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded transition-colors"
+                  class="px-2 py-0.5 text-[10px] bg-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-[var(--color-text)] rounded transition-colors"
                 >
                   {d}
                 </button>
@@ -289,7 +289,7 @@ export default function DNSLookupPage() {
                               <td class="px-4 py-2">
                                 <span class={`px-1.5 py-0.5 rounded text-[10px] font-medium ${typeColor(rec.type)}`}>{rec.type}</span>
                               </td>
-                              <td class="px-4 py-2 font-mono text-white break-all">{rec.value}</td>
+                              <td class="px-4 py-2 font-mono text-[var(--color-text)] break-all">{rec.value}</td>
                             </tr>
                           )}
                         </For>
@@ -325,7 +325,7 @@ export default function DNSLookupPage() {
                             </p>
                           }>
                             <For each={r().records}>
-                              {(rec) => <p class="text-xs font-mono text-white">{rec.value}</p>}
+                              {(rec) => <p class="text-xs font-mono text-[var(--color-text)]">{rec.value}</p>}
                             </For>
                           </Show>
                           <p class="text-[10px] text-slate-600 mt-1">{r().query_time_ms}ms</p>
@@ -339,7 +339,7 @@ export default function DNSLookupPage() {
                             <p class="text-xs font-mono text-amber-400">NXDOMAIN</p>
                           }>
                             <For each={compareResult()!.records}>
-                              {(rec) => <p class="text-xs font-mono text-white">{rec.value}</p>}
+                              {(rec) => <p class="text-xs font-mono text-[var(--color-text)]">{rec.value}</p>}
                             </For>
                           </Show>
                           <p class="text-[10px] text-slate-600 mt-1">{compareResult()!.query_time_ms}ms</p>
@@ -402,7 +402,7 @@ export default function DNSLookupPage() {
                       h.status === "blocked" ? "bg-red-400" :
                       h.status === "nxdomain" ? "bg-amber-400" : "bg-slate-500"
                     }`} />
-                    <span class="text-xs font-mono text-white flex-1">{h.domain}</span>
+                    <span class="text-xs font-mono text-[var(--color-text)] flex-1">{h.domain}</span>
                     <span class={`px-1.5 py-0.5 rounded text-[10px] font-medium ${typeColor(h.type)}`}>{h.type}</span>
                     <span class="text-[10px] text-slate-600">{h.time}</span>
                   </button>

@@ -1,33 +1,15 @@
-import { type Component, type JSX, createSignal, onMount, Show, For } from "solid-js";
+import { type Component, type JSX, createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { A, useLocation, useSearchParams } from "@solidjs/router";
 import { logout, getToken, getUser, setUserInfo, authHeaders } from "~/lib/auth";
 import { clusterAPI } from "~/lib/api";
 import { t, getLang, setLang } from "~/lib/i18n";
+import { getTheme, cycleTheme, initTheme, type Theme } from "~/lib/theme";
 
 interface LayoutProps {
   children: JSX.Element;
 }
 
-// Inline brand logo SVG (DNS node network)
-const BrandLogo = (props: { class?: string }) => (
-  <svg viewBox="0 0 32 32" fill="none" class={props.class || "w-8 h-8"}>
-    <defs>
-      <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#60a5fa"/>
-        <stop offset="100%" stop-color="#2563eb"/>
-      </linearGradient>
-    </defs>
-    <rect width="32" height="32" rx="8" fill="url(#logo-grad)"/>
-    <circle cx="16" cy="10" r="2.5" fill="white"/>
-    <circle cx="9" cy="20" r="2" fill="white" opacity="0.8"/>
-    <circle cx="23" cy="20" r="2" fill="white" opacity="0.8"/>
-    <circle cx="16" cy="25" r="1.5" fill="white" opacity="0.6"/>
-    <line x1="16" y1="12.5" x2="9" y2="18" stroke="white" stroke-width="1.2" opacity="0.5"/>
-    <line x1="16" y1="12.5" x2="23" y2="18" stroke="white" stroke-width="1.2" opacity="0.5"/>
-    <line x1="9" y1="22" x2="16" y2="23.5" stroke="white" stroke-width="1" opacity="0.35"/>
-    <line x1="23" y1="22" x2="16" y2="23.5" stroke="white" stroke-width="1" opacity="0.35"/>
-  </svg>
-);
+const COLLAPSE_KEY = "sidebar-collapsed";
 
 // Nav item groups - use i18n keys for labels
 const navGroupDefs = [
@@ -61,12 +43,32 @@ const navGroupDefs = [
 
 const clusterNavItem = { href: "/cluster", label: "Cluster", icon: "M5 12a7 7 0 0114 0M12 5a7 7 0 010 14m0-14v14m7-7H5" };
 
+const themeIcons: Record<Theme, string> = {
+  dark: "M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
+  light: "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z",
+  system: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
+};
+
 const Layout: Component<LayoutProps> = (props) => {
   const location = useLocation();
   const [clusterRole, setClusterRole] = createSignal("standalone");
   const [searchParams] = useSearchParams();
 
+  // Mobile drawer: closed by default. Desktop rail: persisted.
+  const [drawerOpen, setDrawerOpen] = createSignal(false);
+  const [collapsed, setCollapsed] = createSignal(
+    typeof localStorage !== "undefined" && localStorage.getItem(COLLAPSE_KEY) === "1"
+  );
+
+  const toggleCollapsed = () => {
+    const v = !collapsed();
+    setCollapsed(v);
+    if (typeof localStorage !== "undefined") localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0");
+  };
+
   onMount(async () => {
+    initTheme();
+
     if (!getUser() && getToken()) {
       try {
         const res = await fetch("/api/auth/me", { headers: authHeaders() });
@@ -77,6 +79,29 @@ const Layout: Component<LayoutProps> = (props) => {
       const cfg = await clusterAPI.getConfig();
       setClusterRole(cfg.node_role);
     } catch {}
+  });
+
+  // Escape closes the drawer — the sidebar used to be inescapable on mobile.
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerOpen(false); };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+  });
+
+  // Navigating always dismisses the drawer.
+  createEffect(() => {
+    location.pathname;
+    searchParams.tab;
+    setDrawerOpen(false);
+  });
+
+  // Don't let the page scroll behind the open drawer.
+  createEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.style.overflow = drawerOpen() ? "hidden" : "";
+  });
+  onCleanup(() => {
+    if (typeof document !== "undefined") document.body.style.overflow = "";
   });
 
   const getNavGroups = () => {
@@ -116,27 +141,67 @@ const Layout: Component<LayoutProps> = (props) => {
     }
   };
 
+  const themeLabel = () => {
+    const th = getTheme();
+    return th === "dark" ? "Dark" : th === "light" ? "Light" : "System";
+  };
+
+  // Icon-only rail on desktop; the mobile drawer always shows full labels.
+  const railed = () => collapsed() && !drawerOpen();
+
+  const linkBase = "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all";
+  const linkActive = "bg-[var(--color-brand-500)]/15 text-[var(--color-brand-400)] font-medium";
+  const linkIdle = "text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)]";
+
   return (
-    <div class="flex h-screen overflow-hidden bg-[var(--color-bg)]">
-      {/* Sidebar */}
-      <aside class="w-[260px] bg-[var(--color-bg-sidebar)] border-r border-[var(--color-border)] flex flex-col flex-shrink-0">
+    <div class="flex h-screen overflow-hidden">
+      {/* Mobile backdrop */}
+      <Show when={drawerOpen()}>
+        <div
+          class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm lg:hidden"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      </Show>
+
+      {/* Sidebar — off-canvas under lg, static rail/panel from lg up */}
+      <aside
+        class={`glass-strong glass-sheen fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--glass-border)]
+                transition-[transform,width] duration-300 ease-out
+                lg:static lg:translate-x-0
+                ${drawerOpen() ? "translate-x-0" : "-translate-x-full"}
+                ${railed() ? "w-[76px]" : "w-[260px]"}`}
+        aria-label="Sidebar"
+      >
         {/* Brand header */}
-        <div class="px-4 py-4">
-          <div class="flex items-center gap-3">
-            <img src="/logo-kdm.png" alt="KResD Manager" class="h-9 object-contain flex-shrink-0" />
-            <div>
-              <h1 class="text-[14px] font-bold text-white tracking-tight leading-tight">KResD</h1>
+        <div class="px-4 py-4 flex items-center gap-3">
+          <img src="/logo-kdm.png" alt="KResD Manager" class="h-9 object-contain flex-shrink-0" />
+          <Show when={!railed()}>
+            <div class="min-w-0">
+              <h1 class="text-[14px] font-bold text-[var(--color-text)] tracking-tight leading-tight">KResD</h1>
               <p class="text-[10px] text-[var(--color-text-faint)] font-medium tracking-wider uppercase">Manager</p>
             </div>
-          </div>
+          </Show>
+          {/* Close (mobile only) */}
+          <button
+            onClick={() => setDrawerOpen(false)}
+            class="ml-auto lg:hidden p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)] transition-colors"
+            aria-label="Close menu"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Navigation */}
-        <nav class="flex-1 px-3 pb-3 overflow-y-auto space-y-5">
+        <nav class="flex-1 px-3 pb-3 overflow-y-auto overflow-x-hidden space-y-5">
           <For each={getNavGroups()}>
             {(group) => (
               <div>
-                <p class="px-3 mb-1.5 text-[10px] font-semibold text-[var(--color-text-faint)] uppercase tracking-wider">{group.label as string}</p>
+                <Show when={!railed()}>
+                  <p class="px-3 mb-1.5 text-[10px] font-semibold text-[var(--color-text-faint)] uppercase tracking-wider">{group.label as string}</p>
+                </Show>
                 <div class="space-y-0.5">
                   <For each={group.items}>
                     {(item) => (
@@ -144,18 +209,15 @@ const Layout: Component<LayoutProps> = (props) => {
                         <div>
                           <A
                             href="/settings?tab=account"
-                            class={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all ${
-                              isActive("/settings")
-                                ? "bg-[var(--color-brand-500)]/15 text-[var(--color-brand-400)] font-medium"
-                                : "text-[var(--color-text-muted)] hover:text-white hover:bg-white/5"
-                            }`}
+                            title={railed() ? (item.label as string) : undefined}
+                            class={`${linkBase} ${railed() ? "justify-center px-0" : ""} ${isActive("/settings") ? linkActive : linkIdle}`}
                           >
                             <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                               <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
                             </svg>
-                            {item.label}
+                            <Show when={!railed()}>{item.label}</Show>
                           </A>
-                          <Show when={isActive("/settings")}>
+                          <Show when={isActive("/settings") && !railed()}>
                             <div class="ml-[30px] mt-0.5 space-y-0.5 border-l border-[var(--color-border)] pl-3">
                               <For each={settingsSubItems()}>
                                 {(sub) => (
@@ -164,7 +226,7 @@ const Layout: Component<LayoutProps> = (props) => {
                                     class={`block px-2.5 py-1.5 rounded-md text-[11px] transition-colors ${
                                       activeSettingsTab() === sub.tab
                                         ? "text-[var(--color-brand-400)] bg-[var(--color-brand-500)]/10 font-medium"
-                                        : "text-[var(--color-text-faint)] hover:text-[var(--color-text-muted)] hover:bg-white/5"
+                                        : "text-[var(--color-text-faint)] hover:text-[var(--color-text-muted)] hover:bg-[var(--glass-highlight)]"
                                     }`}
                                   >
                                     {sub.label}
@@ -177,16 +239,13 @@ const Layout: Component<LayoutProps> = (props) => {
                       ) : (
                         <A
                           href={item.href}
-                          class={`flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all ${
-                            isActive(item.href)
-                              ? "bg-[var(--color-brand-500)]/15 text-[var(--color-brand-400)] font-medium"
-                              : "text-[var(--color-text-muted)] hover:text-white hover:bg-white/5"
-                          }`}
+                          title={railed() ? (item.label as string) : undefined}
+                          class={`${linkBase} ${railed() ? "justify-center px-0" : ""} ${isActive(item.href) ? linkActive : linkIdle}`}
                         >
                           <svg class="w-[18px] h-[18px] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                             <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
                           </svg>
-                          {item.label}
+                          <Show when={!railed()}>{item.label}</Show>
                         </A>
                       )
                     )}
@@ -198,61 +257,111 @@ const Layout: Component<LayoutProps> = (props) => {
         </nav>
 
         {/* Footer */}
-        <div class="px-4 py-3 border-t border-[var(--color-border)]">
-          {/* Status + Language */}
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-2">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span class="text-[10px] text-[var(--color-text-faint)]">{t("footer.resolver_active")}</span>
+        <div class="px-4 py-3 border-t border-[var(--glass-border)]">
+          <div class={`flex items-center gap-2 mb-3 ${railed() ? "justify-center" : "justify-between"}`}>
+            <Show when={!railed()}>
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                <span class="text-[10px] text-[var(--color-text-faint)] truncate">{t("footer.resolver_active")}</span>
+              </div>
+            </Show>
+            <div class="flex items-center gap-1">
+              {/* Theme toggle: dark → light → system */}
+              <button
+                onClick={cycleTheme}
+                class="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)] transition-colors"
+                title={`Theme: ${themeLabel()}`}
+                aria-label={`Theme: ${themeLabel()}`}
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d={themeIcons[getTheme()]} />
+                </svg>
+              </button>
+              <Show when={!railed()}>
+                <button
+                  onClick={() => setLang(getLang() === "en" ? "id" : "en")}
+                  class="flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] text-[var(--color-text-faint)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)] transition-colors"
+                  title={t("common.language")}
+                >
+                  <span class="font-mono font-bold">{getLang() === "en" ? "EN" : "ID"}</span>
+                </button>
+              </Show>
             </div>
-            <button
-              onClick={() => setLang(getLang() === "en" ? "id" : "en")}
-              class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--color-text-faint)] hover:text-white hover:bg-white/5 transition-colors"
-              title={t("common.language")}
-            >
-              <span class="font-mono font-bold">{getLang() === "en" ? "EN" : "ID"}</span>
-              <svg class="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-            </button>
-          </div>
-          <div class="flex items-center gap-1.5 mb-3">
-            <span class={`w-1.5 h-1.5 rounded-full ${
-              clusterRole() === "controller" ? "bg-blue-500" :
-              clusterRole() === "agent" ? "bg-purple-500" : "bg-slate-600"
-            }`} />
-            <span class="text-[10px] text-[var(--color-text-faint)]">{roleLabel()}</span>
           </div>
 
-          {/* User + Logout */}
+          <Show when={!railed()}>
+            <div class="flex items-center gap-1.5 mb-3">
+              <span class={`w-1.5 h-1.5 rounded-full ${
+                clusterRole() === "controller" ? "bg-blue-500" :
+                clusterRole() === "agent" ? "bg-purple-500" : "bg-slate-600"
+              }`} />
+              <span class="text-[10px] text-[var(--color-text-faint)]">{roleLabel()}</span>
+            </div>
+          </Show>
+
           <Show when={getUser()}>
             <button
               onClick={() => logout()}
-              class="flex items-center gap-2.5 w-full px-2.5 py-2 text-[12px] text-[var(--color-text-faint)] hover:text-red-400 hover:bg-red-500/5 rounded-lg transition-colors group"
+              class={`flex items-center gap-2.5 w-full px-2.5 py-2 text-[12px] text-[var(--color-text-faint)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors group ${railed() ? "justify-center px-0" : ""}`}
+              title={railed() ? getUser()!.username : undefined}
             >
               <div class="w-6 h-6 bg-[var(--color-brand-500)]/20 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--color-brand-400)] flex-shrink-0 group-hover:bg-red-500/20 group-hover:text-red-400 transition-colors">
                 {getUser()!.username[0].toUpperCase()}
               </div>
-              <span class="truncate">{getUser()!.username}</span>
-              <svg class="w-3.5 h-3.5 ml-auto flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-              </svg>
+              <Show when={!railed()}>
+                <span class="truncate">{getUser()!.username}</span>
+                <svg class="w-3.5 h-3.5 ml-auto flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+                </svg>
+              </Show>
             </button>
           </Show>
 
-          {/* Copyright */}
-          <p class="text-[9px] text-[var(--color-text-faint)]/60 text-center mt-2 select-none">
-            {t("footer.copyright")}
-          </p>
+          <Show when={!railed()}>
+            <p class="text-[9px] text-[var(--color-text-faint)]/60 text-center mt-2 select-none">
+              {t("footer.copyright")}
+            </p>
+          </Show>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main class="flex-1 overflow-y-auto">
-        <div class="p-6">
-          {props.children}
-        </div>
-      </main>
+      {/* Main column */}
+      <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top bar: hamburger on mobile, rail toggle on desktop */}
+        <header class="glass glass-sheen flex items-center gap-3 px-4 py-2.5 border-b border-[var(--glass-border)] flex-shrink-0">
+          <button
+            onClick={() => setDrawerOpen(true)}
+            class="lg:hidden p-2 -ml-1 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)] transition-colors"
+            aria-label="Open menu"
+            aria-expanded={drawerOpen()}
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <button
+            onClick={toggleCollapsed}
+            class="hidden lg:flex p-2 -ml-1 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--glass-highlight)] transition-colors"
+            aria-label={collapsed() ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d={collapsed()
+                  ? "M13 5l7 7-7 7M5 5l7 7-7 7"
+                  : "M11 19l-7-7 7-7m8 14l-7-7 7-7"} />
+            </svg>
+          </button>
+
+          <img src="/logo-kdm.png" alt="" class="h-7 object-contain lg:hidden" />
+        </header>
+
+        <main class="flex-1 overflow-y-auto">
+          <div class="p-4 sm:p-6">
+            {props.children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

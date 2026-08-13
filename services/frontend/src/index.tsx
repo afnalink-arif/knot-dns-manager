@@ -2,7 +2,11 @@ import { render } from "solid-js/web";
 import { Router, Route, Navigate } from "@solidjs/router";
 import { Component, JSX } from "solid-js";
 import { isLoggedIn } from "./lib/auth";
+import { initTheme } from "./lib/theme";
 import "./app.css";
+
+// Stamp data-theme before the first paint so the app never flashes the wrong theme.
+initTheme();
 
 import LoginPage from "./routes/login";
 import Overview from "./routes/index";

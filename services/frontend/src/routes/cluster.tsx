@@ -232,7 +232,7 @@ export default function ClusterPage() {
       <div class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold text-white">Cluster Overview</h1>
+            <h1 class="text-2xl font-bold text-[var(--color-text)]">Cluster Overview</h1>
             <p class="text-sm text-slate-400 mt-1">Monitoring all DNS nodes</p>
           </div>
           <span class="text-sm text-slate-500">{totalNodes()} nodes</span>
@@ -310,7 +310,7 @@ export default function ClusterPage() {
                         <span class={`w-2.5 h-2.5 rounded-full ${statusColor(node.status)} ${node.status === "online" ? "animate-pulse" : ""}`} />
                         <div>
                           <div class="flex items-center gap-2">
-                            <h3 class="text-white font-medium text-sm">{node.name || node.domain}</h3>
+                            <h3 class="text-[var(--color-text)] font-medium text-sm">{node.name || node.domain}</h3>
                             <Show when={node.is_local}>
                               <span class="px-1.5 py-0.5 bg-blue-500/15 text-blue-400 text-[9px] font-medium rounded">LOCAL</span>
                             </Show>
@@ -349,7 +349,7 @@ export default function ClusterPage() {
                     <div class="grid grid-cols-3 gap-3">
                       <div>
                         <p class="text-[10px] text-slate-500">QPS</p>
-                        <p class="text-lg font-medium text-white">{nodeQps() !== null ? fmt(nodeQps()!, 1) : "--"}</p>
+                        <p class="text-lg font-medium text-[var(--color-text)]">{nodeQps() !== null ? fmt(nodeQps()!, 1) : "--"}</p>
                       </div>
                       <div>
                         <p class="text-[10px] text-slate-500">Cache</p>

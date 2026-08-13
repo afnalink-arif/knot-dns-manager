@@ -38,7 +38,7 @@ export default function QueryLogs() {
       <div class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold text-white">Query Logs</h1>
+            <h1 class="text-2xl font-bold text-[var(--color-text)]">Query Logs</h1>
             <p class="text-sm text-slate-400 mt-1">Detailed DNS query log from ClickHouse</p>
           </div>
           <button

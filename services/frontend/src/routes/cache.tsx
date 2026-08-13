@@ -34,7 +34,7 @@ export default function CachePage() {
     <Layout>
       <div class="space-y-6">
         <div>
-          <h1 class="text-2xl font-bold text-white">Cache Performance</h1>
+          <h1 class="text-2xl font-bold text-[var(--color-text)]">Cache Performance</h1>
           <p class="text-sm text-slate-400 mt-1">DNS cache metrics and efficiency</p>
         </div>
 
@@ -85,7 +85,7 @@ export default function CachePage() {
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p class="text-xs text-slate-500">Max Size</p>
-              <p class="text-lg font-medium text-white">{cacheSize()}</p>
+              <p class="text-lg font-medium text-[var(--color-text)]">{cacheSize()}</p>
             </div>
             <div>
               <p class="text-xs text-slate-500">Serve Stale</p>
@@ -99,7 +99,7 @@ export default function CachePage() {
             </div>
             <div>
               <p class="text-xs text-slate-500">Storage</p>
-              <p class="text-lg font-medium text-white">{resolver()?.cache?.storage || "--"}</p>
+              <p class="text-lg font-medium text-[var(--color-text)]">{resolver()?.cache?.storage || "--"}</p>
             </div>
           </div>
         </div>

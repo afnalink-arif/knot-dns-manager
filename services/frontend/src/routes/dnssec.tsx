@@ -18,7 +18,7 @@ export default function DNSSECPage() {
     <Layout>
       <div class="space-y-6">
         <div>
-          <h1 class="text-2xl font-bold text-white">DNSSEC Validation</h1>
+          <h1 class="text-2xl font-bold text-[var(--color-text)]">DNSSEC Validation</h1>
           <p class="text-sm text-slate-400 mt-1">DNSSEC validation status and statistics</p>
         </div>
 
@@ -60,11 +60,11 @@ export default function DNSSECPage() {
               </div>
               <div class="flex items-center justify-between py-2 border-b border-slate-700">
                 <span class="text-slate-400">Trust Anchor Management</span>
-                <span class="text-white">RFC 5011 (auto)</span>
+                <span class="text-[var(--color-text)]">RFC 5011 (auto)</span>
               </div>
               <div class="flex items-center justify-between py-2 border-b border-slate-700">
                 <span class="text-slate-400">Root Key</span>
-                <span class="text-white">Built-in</span>
+                <span class="text-[var(--color-text)]">Built-in</span>
               </div>
               <div class="flex items-center justify-between py-2">
                 <span class="text-slate-400">Negative Trust Anchors</span>

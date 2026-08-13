@@ -210,7 +210,7 @@ export default function FilteringPage() {
       <div class="space-y-5">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-xl font-bold text-white">DNS Filtering</h1>
+            <h1 class="text-xl font-bold text-[var(--color-text)]">DNS Filtering</h1>
             <p class="text-xs text-slate-500 mt-0.5">Manage blocked domains and filtering rules</p>
           </div>
           <button
@@ -266,7 +266,7 @@ export default function FilteringPage() {
         {/* Add domain + Import */}
         <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-medium text-white">Add Domain</h3>
+            <h3 class="text-sm font-medium text-[var(--color-text)]">Add Domain</h3>
             <button
               onClick={() => setImportMode(!importMode())}
               class="text-xs text-blue-400 hover:text-blue-300 transition-colors"
@@ -281,13 +281,13 @@ export default function FilteringPage() {
               <input
                 type="text"
                 placeholder="e.g. ads.example.com"
-                class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
+                class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
                 value={newDomain()}
                 onInput={(e) => setNewDomain(e.target.value)}
               />
             </div>
             <select
-              class="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+              class="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
               value={newCategory()}
               onChange={(e) => setNewCategory(e.target.value)}
             >
@@ -313,7 +313,7 @@ export default function FilteringPage() {
                   <input
                     type="url"
                     placeholder="https://raw.githubusercontent.com/..."
-                    class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
+                    class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
                     value={importUrl()}
                     onInput={(e) => setImportUrl(e.target.value)}
                   />
@@ -321,7 +321,7 @@ export default function FilteringPage() {
                 <div>
                   <label class="block text-xs text-slate-500 mb-1">Kategori</label>
                   <select
-                    class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                    class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
                     value={importCategory()}
                     onChange={(e) => setImportCategory(e.target.value)}
                   >
@@ -339,7 +339,7 @@ export default function FilteringPage() {
                 <textarea
                   placeholder={"ads.example.com\ntracker.example.com\n..."}
                   rows={3}
-                  class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition font-mono"
+                  class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 transition font-mono"
                   value={importBulk()}
                   onInput={(e) => setImportBulk(e.target.value)}
                 />
@@ -359,13 +359,13 @@ export default function FilteringPage() {
         <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
           <div class="p-4 border-b border-slate-700 flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <h3 class="text-sm font-medium text-white">Blocked Domains</h3>
+              <h3 class="text-sm font-medium text-[var(--color-text)]">Blocked Domains</h3>
               <span class="text-xs text-slate-500">{filteredRules().length} rules</span>
             </div>
             <input
               type="text"
               placeholder="Search domains..."
-              class="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition w-48"
+              class="bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 transition w-48"
               value={search()}
               onInput={(e) => setSearch(e.target.value)}
             />
@@ -391,7 +391,7 @@ export default function FilteringPage() {
                             rule.enabled ? "left-4" : "left-0.5"
                           }`} />
                         </button>
-                        <span class={`text-sm font-mono truncate ${rule.enabled ? "text-white" : "text-slate-500 line-through"}`}>
+                        <span class={`text-sm font-mono truncate ${rule.enabled ? "text-[var(--color-text)]" : "text-slate-500 line-through"}`}>
                           {rule.domain}
                         </span>
                         <span
@@ -420,15 +420,15 @@ export default function FilteringPage() {
         {/* Tabs */}
         <div class="flex gap-1 bg-slate-800/50 rounded-lg p-1">
           <button onClick={() => setActiveTab("rules")}
-            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "rules" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
+            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "rules" ? "bg-slate-700 text-[var(--color-text)] shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
             Filter Rules
           </button>
           <button onClick={() => setActiveTab("rpz")}
-            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "rpz" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
+            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "rpz" ? "bg-slate-700 text-[var(--color-text)] shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
             RPZ Komdigi
           </button>
           <button onClick={() => setActiveTab("blockpage")}
-            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "blockpage" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
+            class={`flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all ${activeTab() === "blockpage" ? "bg-slate-700 text-[var(--color-text)] shadow-sm" : "text-slate-400 hover:text-slate-300"}`}>
             Block Page
           </button>
         </div>
@@ -440,7 +440,7 @@ export default function FilteringPage() {
             <div class="bg-slate-800 rounded-xl p-5 border border-slate-700">
               <div class="flex items-center justify-between mb-4">
                 <div>
-                  <h3 class="text-sm font-medium text-white">RPZ Trust Positif Komdigi</h3>
+                  <h3 class="text-sm font-medium text-[var(--color-text)]">RPZ Trust Positif Komdigi</h3>
                   <p class="text-[10px] text-slate-500 mt-0.5">
                     Response Policy Zone from Indonesia's Ministry of Communication and Digital
                   </p>
@@ -483,7 +483,7 @@ export default function FilteringPage() {
               <div class="mt-4 pt-4 border-t border-slate-700">
                 <div class="flex items-center justify-between">
                   <div>
-                    <h4 class="text-xs font-medium text-white">Auto Sync</h4>
+                    <h4 class="text-xs font-medium text-[var(--color-text)]">Auto Sync</h4>
                     <p class="text-[10px] text-slate-500 mt-0.5">Automatically sync zone on a schedule</p>
                   </div>
                   <button
@@ -518,7 +518,7 @@ export default function FilteringPage() {
                             showMsg(`Auto sync interval: ${hours}h`);
                           } catch (err: any) { showMsg(err.message, true); }
                         }}
-                        class="bg-slate-700 text-white text-xs rounded-md px-2 py-1 border border-slate-600"
+                        class="bg-slate-700 text-[var(--color-text)] text-xs rounded-md px-2 py-1 border border-slate-600"
                       >
                         <option value={6}>6 hours</option>
                         <option value={12}>12 hours</option>
@@ -542,7 +542,7 @@ export default function FilteringPage() {
                             showMsg(`Sync hour: ${hour.toString().padStart(2, "0")}:00 WIB`);
                           } catch (err: any) { showMsg(err.message, true); }
                         }}
-                        class="bg-slate-700 text-white text-xs rounded-md px-2 py-1 border border-slate-600"
+                        class="bg-slate-700 text-[var(--color-text)] text-xs rounded-md px-2 py-1 border border-slate-600"
                       >
                         {Array.from({ length: 24 }, (_, i) => (
                           <option value={i}>{i.toString().padStart(2, "0")}:00</option>
@@ -592,23 +592,23 @@ export default function FilteringPage() {
             <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <p class="text-[10px] text-slate-500">Blocked Domains</p>
-                <p class="text-xl font-bold text-white mt-1">{(rpzConfig()?.domain_count || 0).toLocaleString()}</p>
+                <p class="text-xl font-bold text-[var(--color-text)] mt-1">{(rpzConfig()?.domain_count || 0).toLocaleString()}</p>
               </div>
               <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <p class="text-[10px] text-slate-500">Zone Size</p>
-                <p class="text-xl font-bold text-white mt-1">
+                <p class="text-xl font-bold text-[var(--color-text)] mt-1">
                   {rpzConfig()?.file_size_bytes ? (rpzConfig()!.file_size_bytes / 1024 / 1024).toFixed(1) + " MB" : "—"}
                 </p>
               </div>
               <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <p class="text-[10px] text-slate-500">Kresd Memory</p>
-                <p class={`text-xl font-bold mt-1 ${rpzMemoryMB() > 2048 ? "text-amber-400" : "text-white"}`}>
+                <p class={`text-xl font-bold mt-1 ${rpzMemoryMB() > 2048 ? "text-amber-400" : "text-[var(--color-text)]"}`}>
                   {rpzMemoryMB() > 0 ? (rpzMemoryMB() >= 1024 ? (rpzMemoryMB() / 1024).toFixed(1) + " GB" : rpzMemoryMB().toFixed(0) + " MB") : "—"}
                 </p>
               </div>
               <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <p class="text-[10px] text-slate-500">Last Sync</p>
-                <p class="text-sm font-medium text-white mt-1">
+                <p class="text-sm font-medium text-[var(--color-text)] mt-1">
                   {rpzConfig()?.last_sync ? new Date(rpzConfig()!.last_sync!).toLocaleString() : "Never"}
                 </p>
                 <Show when={rpzConfig()?.sync_duration_ms}>
@@ -693,35 +693,35 @@ export default function FilteringPage() {
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Settings Form */}
             <div class="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-              <h3 class="text-sm font-medium text-white mb-3">Customize Block Page</h3>
+              <h3 class="text-sm font-medium text-[var(--color-text)] mb-3">Customize Block Page</h3>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Title</label>
-                <input type="text" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                <input type="text" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
                   value={bpConfig().title} onInput={(e) => updateBp("title", e.target.value)} />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Subtitle</label>
-                <textarea rows={2} class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                <textarea rows={2} class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
                   value={bpConfig().subtitle} onInput={(e) => updateBp("subtitle", e.target.value)} />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Additional Message</label>
-                <textarea rows={2} class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                <textarea rows={2} class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
                   value={bpConfig().message} onInput={(e) => updateBp("message", e.target.value)} />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Contact Info (optional)</label>
-                <input type="text" placeholder="Email: admin@example.com" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
+                <input type="text" placeholder="Email: admin@example.com" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 transition"
                   value={bpConfig().contact} onInput={(e) => updateBp("contact", e.target.value)} />
               </div>
 
               <div>
                 <label class="block text-xs text-slate-500 mb-1">Footer</label>
-                <input type="text" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition"
+                <input type="text" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:border-blue-500 transition"
                   value={bpConfig().footer_text} onInput={(e) => updateBp("footer_text", e.target.value)} />
               </div>
 
@@ -731,7 +731,7 @@ export default function FilteringPage() {
                   <div class="flex items-center gap-2">
                     <input type="color" class="w-8 h-8 rounded border-0 cursor-pointer"
                       value={bpConfig().bg_color} onInput={(e) => updateBp("bg_color", e.target.value)} />
-                    <input type="text" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500 transition"
+                    <input type="text" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] font-mono focus:outline-none focus:border-blue-500 transition"
                       value={bpConfig().bg_color} onInput={(e) => updateBp("bg_color", e.target.value)} />
                   </div>
                 </div>
@@ -740,7 +740,7 @@ export default function FilteringPage() {
                   <div class="flex items-center gap-2">
                     <input type="color" class="w-8 h-8 rounded border-0 cursor-pointer"
                       value={bpConfig().accent_color} onInput={(e) => updateBp("accent_color", e.target.value)} />
-                    <input type="text" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500 transition"
+                    <input type="text" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-xs text-[var(--color-text)] font-mono focus:outline-none focus:border-blue-500 transition"
                       value={bpConfig().accent_color} onInput={(e) => updateBp("accent_color", e.target.value)} />
                   </div>
                 </div>
@@ -779,12 +779,12 @@ export default function FilteringPage() {
                   <div class="w-full max-w-[280px] text-center p-5 rounded-xl border border-white/10" style="background:rgba(255,255,255,0.04);backdrop-filter:blur(20px)">
                     <Show when={bpConfig().show_logo}>
                       <div class="w-10 h-10 mx-auto mb-3 rounded-full flex items-center justify-center" style={`background:${bpConfig().accent_color}`}>
-                        <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <svg class="w-5 h-5 text-[var(--color-text)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
                         </svg>
                       </div>
                     </Show>
-                    <h3 class="text-sm font-bold text-white mb-1">{bpConfig().title}</h3>
+                    <h3 class="text-sm font-bold text-[var(--color-text)] mb-1">{bpConfig().title}</h3>
                     <Show when={bpConfig().show_domain}>
                       <div class="text-[10px] font-mono px-2 py-1 rounded my-2" style={`color:${bpConfig().accent_color};background:rgba(0,0,0,0.3)`}>
                         blocked-domain.com

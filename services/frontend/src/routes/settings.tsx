@@ -363,7 +363,7 @@ export default function SettingsPage() {
     }
   };
 
-  const inputClass = "w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition";
+  const inputClass = "w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition";
   const labelClass = "block text-xs font-medium text-slate-500 mb-1";
 
   const Alert = (props: { msg: string; error: boolean }) => (
@@ -375,7 +375,7 @@ export default function SettingsPage() {
   const SectionCard = (props: { title: string; description?: string; children: any; class?: string }) => (
     <div class={`bg-slate-800 rounded-xl border border-slate-700 ${props.class || ""}`}>
       <div class="px-5 py-4 border-b border-slate-700/50">
-        <h3 class="text-sm font-semibold text-white">{props.title}</h3>
+        <h3 class="text-sm font-semibold text-[var(--color-text)]">{props.title}</h3>
         <Show when={props.description}>
           <p class="text-[11px] text-slate-500 mt-0.5">{props.description}</p>
         </Show>
@@ -470,7 +470,7 @@ export default function SettingsPage() {
                     showSrvMsg(`Timezone set to ${tz}`);
                   } catch (err: any) { showSrvMsg(err.message, true); }
                 }}
-                class="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 border border-slate-600 w-full max-w-sm"
+                class="bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-3 py-2 border border-slate-600 w-full max-w-sm"
               >
                 <option value="Asia/Jakarta">Asia/Jakarta (WIB, UTC+7)</option>
                 <option value="Asia/Makassar">Asia/Makassar (WITA, UTC+8)</option>
@@ -496,7 +496,7 @@ export default function SettingsPage() {
               <div class="space-y-4">
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="text-xs text-white font-medium">{t("settings.query_logs")}</p>
+                    <p class="text-xs text-[var(--color-text)] font-medium">{t("settings.query_logs")}</p>
                     <p class="text-[10px] text-slate-500">dns_queries, top_domains</p>
                   </div>
                   <div class="flex items-center gap-2">
@@ -510,7 +510,7 @@ export default function SettingsPage() {
                           showSrvMsg(t("settings.retention_updated"));
                         } catch (err: any) { showSrvMsg(err.message, true); }
                       }}
-                      class="bg-slate-900 text-white text-xs rounded-lg px-3 py-1.5 border border-slate-600 w-32"
+                      class="bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-3 py-1.5 border border-slate-600 w-32"
                     >
                       <option value={7}>7 {t("settings.days")}</option>
                       <option value={14}>14 {t("settings.days")}</option>
@@ -524,7 +524,7 @@ export default function SettingsPage() {
                 </div>
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="text-xs text-white font-medium">{t("settings.metrics")}</p>
+                    <p class="text-xs text-[var(--color-text)] font-medium">{t("settings.metrics")}</p>
                     <p class="text-[10px] text-slate-500">QPS, latency, cache, system</p>
                   </div>
                   <div class="flex items-center gap-2">
@@ -538,7 +538,7 @@ export default function SettingsPage() {
                           showSrvMsg(t("settings.retention_updated"));
                         } catch (err: any) { showSrvMsg(err.message, true); }
                       }}
-                      class="bg-slate-900 text-white text-xs rounded-lg px-3 py-1.5 border border-slate-600 w-32"
+                      class="bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-3 py-1.5 border border-slate-600 w-32"
                     >
                       <option value={7}>7 {t("settings.days")}</option>
                       <option value={15}>15 {t("settings.days")}</option>
@@ -560,7 +560,7 @@ export default function SettingsPage() {
                     <div class="flex items-center justify-between bg-slate-900/50 rounded-lg px-3.5 py-2.5 group border border-slate-700/50">
                       <div class="flex items-center gap-2.5">
                         <span class="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
-                        <span class="text-xs text-white font-mono">{subnet}</span>
+                        <span class="text-xs text-[var(--color-text)] font-mono">{subnet}</span>
                       </div>
                       <button
                         onClick={async () => {
@@ -610,7 +610,7 @@ export default function SettingsPage() {
                 <input
                   type="text"
                   placeholder="e.g. 10.0.0.0/24"
-                  class="flex-1 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 border border-slate-600 placeholder-slate-600 font-mono"
+                  class="flex-1 bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-3 py-2 border border-slate-600 placeholder-slate-600 font-mono"
                   value={newSubnet()}
                   onInput={(e) => setNewSubnet(e.currentTarget.value)}
                 />
@@ -630,7 +630,7 @@ export default function SettingsPage() {
               <div class="space-y-3">
                 <div class="flex gap-2">
                   <button onClick={checkForUpdates} disabled={updateChecking() || updateRunning()}
-                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-xs rounded-lg transition-colors">
+                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-[var(--color-text)] text-xs rounded-lg transition-colors">
                     {updateChecking() ? t("settings.checking") : t("settings.check_updates")}
                   </button>
                   <Show when={updateInfo()?.update_available}>
@@ -641,7 +641,7 @@ export default function SettingsPage() {
                   </Show>
                   <Show when={updateInfo() && !updateInfo()!.update_available}>
                     <button onClick={executeUpdate} disabled={updateRunning()}
-                      class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-xs rounded-lg transition-colors">
+                      class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-[var(--color-text)] text-xs rounded-lg transition-colors">
                       {updateRunning() ? t("settings.updating") : t("settings.force_rebuild")}
                     </button>
                   </Show>
@@ -744,7 +744,7 @@ export default function SettingsPage() {
                 {/* Enable/disable toggle */}
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="text-xs text-white font-medium">{t("settings.auto_update")}</p>
+                    <p class="text-xs text-[var(--color-text)] font-medium">{t("settings.auto_update")}</p>
                     <p class="text-[10px] text-slate-500">
                       <Show when={autoUpdateCfg()?.last_auto_update}>
                         {t("settings.last_auto_update")} {new Date(autoUpdateCfg()!.last_auto_update!).toLocaleString()}
@@ -787,7 +787,7 @@ export default function SettingsPage() {
                             setAutoUpdateCfg({ ...cur, auto_update_day: day });
                           } catch (err: any) { showSrvMsg(err.message, true); }
                         }}
-                        class="bg-slate-900 text-white text-xs rounded-lg px-2 py-1.5 border border-slate-600"
+                        class="bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-2 py-1.5 border border-slate-600"
                       >
                         <option value={0}>{t("settings.daily")}</option>
                         <option value={1}>{t("settings.weekly_mon")}</option>
@@ -812,7 +812,7 @@ export default function SettingsPage() {
                             setAutoUpdateCfg({ ...cur, auto_update_hour: hour });
                           } catch (err: any) { showSrvMsg(err.message, true); }
                         }}
-                        class="bg-slate-900 text-white text-xs rounded-lg px-2 py-1.5 border border-slate-600"
+                        class="bg-slate-900 text-[var(--color-text)] text-xs rounded-lg px-2 py-1.5 border border-slate-600"
                       >
                         {Array.from({ length: 24 }, (_, i) => (
                           <option value={i}>{i.toString().padStart(2, "0")}:00</option>
@@ -885,7 +885,7 @@ export default function SettingsPage() {
                           svc.status === "exited" ? "bg-red-500" :
                           svc.status === "restarting" ? "bg-amber-500" : "bg-slate-500"
                         }`} />
-                        <span class="text-xs text-white">{svc.name}</span>
+                        <span class="text-xs text-[var(--color-text)]">{svc.name}</span>
                         <Show when={svc.health}>
                           <span class={`text-[10px] ${svc.health === "healthy" ? "text-emerald-500" : "text-amber-500"}`}>
                             ({svc.health})
@@ -949,7 +949,7 @@ export default function SettingsPage() {
                               node.status === "offline" ? "bg-red-500" : "bg-slate-500"
                             }`} />
                             <div class="min-w-0">
-                              <p class="text-xs text-white truncate">{node.name || node.domain}</p>
+                              <p class="text-xs text-[var(--color-text)] truncate">{node.name || node.domain}</p>
                               <p class="text-[10px] text-slate-600 truncate">{node.domain}{node.version ? ` — ${node.version}` : ""}</p>
                             </div>
                           </div>
@@ -973,7 +973,7 @@ export default function SettingsPage() {
                   <div class="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20 mb-4">
                     <p class="text-[10px] text-amber-400 mb-1.5 font-medium">API Token (shown only once):</p>
                     <div class="flex items-center gap-2">
-                      <code class="flex-1 bg-slate-950 px-2.5 py-1.5 rounded text-[10px] text-white font-mono break-all select-all">{generatedToken()}</code>
+                      <code class="flex-1 bg-slate-950 px-2.5 py-1.5 rounded text-[10px] text-[var(--color-text)] font-mono break-all select-all">{generatedToken()}</code>
                       <button onClick={() => navigator.clipboard.writeText(generatedToken())}
                         class="px-2.5 py-1.5 bg-amber-600 text-white text-[10px] rounded hover:bg-amber-700 transition-colors flex-shrink-0">
                         Copy

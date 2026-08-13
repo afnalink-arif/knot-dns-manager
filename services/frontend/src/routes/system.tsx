@@ -68,7 +68,7 @@ export default function SystemPage() {
         {/* Header */}
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-2xl font-bold text-white">System Monitor</h1>
+            <h1 class="text-2xl font-bold text-[var(--color-text)]">System Monitor</h1>
             <p class="text-sm text-slate-400 mt-1">Server resources and service health</p>
           </div>
           <button
@@ -117,7 +117,7 @@ export default function SystemPage() {
               <div>
                 <div class="flex justify-between text-sm mb-1.5">
                   <span class="text-slate-300">CPU</span>
-                  <span class="text-white font-medium">{cpu() !== null ? fmt(cpu()!, 1) + "%" : "--"}</span>
+                  <span class="text-[var(--color-text)] font-medium">{cpu() !== null ? fmt(cpu()!, 1) + "%" : "--"}</span>
                 </div>
                 <div class="h-3 rounded-full bg-slate-700 overflow-hidden">
                   <div
@@ -131,7 +131,7 @@ export default function SystemPage() {
               <div>
                 <div class="flex justify-between text-sm mb-1.5">
                   <span class="text-slate-300">Memory</span>
-                  <span class="text-white font-medium">
+                  <span class="text-[var(--color-text)] font-medium">
                     {memUsed() ? fmtBytes(memUsed()) : "--"} / {memTotal() ? fmtBytes(memTotal()) : "--"}
                   </span>
                 </div>
@@ -147,7 +147,7 @@ export default function SystemPage() {
               <div>
                 <div class="flex justify-between text-sm mb-1.5">
                   <span class="text-slate-300">Disk (/)</span>
-                  <span class="text-white font-medium">{diskPct() !== null ? fmt(diskPct()!, 1) + "%" : "--"}</span>
+                  <span class="text-[var(--color-text)] font-medium">{diskPct() !== null ? fmt(diskPct()!, 1) + "%" : "--"}</span>
                 </div>
                 <div class="h-3 rounded-full bg-slate-700 overflow-hidden">
                   <div
@@ -171,14 +171,14 @@ export default function SystemPage() {
                       <span class="w-2 h-2 rounded-full bg-emerald-500" />
                       <span class="text-sm text-slate-400">RX</span>
                     </div>
-                    <span class="text-sm text-white font-mono">{fmtBytesPerSec(netRx())}</span>
+                    <span class="text-sm text-[var(--color-text)] font-mono">{fmtBytesPerSec(netRx())}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-blue-500" />
                       <span class="text-sm text-slate-400">TX</span>
                     </div>
-                    <span class="text-sm text-white font-mono">{fmtBytesPerSec(netTx())}</span>
+                    <span class="text-sm text-[var(--color-text)] font-mono">{fmtBytesPerSec(netTx())}</span>
                   </div>
                 </div>
               </div>
@@ -190,14 +190,14 @@ export default function SystemPage() {
                       <span class="w-2 h-2 rounded-full bg-yellow-500" />
                       <span class="text-sm text-slate-400">Read</span>
                     </div>
-                    <span class="text-sm text-white font-mono">{fmtBytesPerSec(diskRead())}</span>
+                    <span class="text-sm text-[var(--color-text)] font-mono">{fmtBytesPerSec(diskRead())}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-purple-500" />
                       <span class="text-sm text-slate-400">Write</span>
                     </div>
-                    <span class="text-sm text-white font-mono">{fmtBytesPerSec(diskWrite())}</span>
+                    <span class="text-sm text-[var(--color-text)] font-mono">{fmtBytesPerSec(diskWrite())}</span>
                   </div>
                 </div>
               </div>
@@ -222,7 +222,7 @@ export default function SystemPage() {
                         status === "ok" ? "bg-emerald-500" : "bg-red-500"
                       }`} />
                       <div>
-                        <p class="text-sm text-white font-medium capitalize">{name}</p>
+                        <p class="text-sm text-[var(--color-text)] font-medium capitalize">{name}</p>
                         <p class={`text-xs ${status === "ok" ? "text-emerald-400" : "text-red-400"}`}>
                           {status === "ok" ? "Healthy" : status}
                         </p>
@@ -244,37 +244,37 @@ export default function SystemPage() {
           <div class="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 text-sm">
             <div>
               <p class="text-slate-500">CPU Cores</p>
-              <p class="text-white">{resolver()?.server?.cpus || "--"}</p>
+              <p class="text-[var(--color-text)]">{resolver()?.server?.cpus || "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">Total RAM</p>
-              <p class="text-white">{memTotal() ? fmtBytes(memTotal()) : "--"}</p>
+              <p class="text-[var(--color-text)]">{memTotal() ? fmtBytes(memTotal()) : "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">DNS Resolver</p>
-              <p class="text-white">Knot Resolver 6.2</p>
+              <p class="text-[var(--color-text)]">Knot Resolver 6.2</p>
             </div>
             <div>
               <p class="text-slate-500">kresd Workers</p>
-              <p class="text-white">{resolver()?.workers ?? "--"}</p>
+              <p class="text-[var(--color-text)]">{resolver()?.workers ?? "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">DNS Cache</p>
-              <p class="text-white">{resolver()?.cache?.["size-max"] || "--"}</p>
+              <p class="text-[var(--color-text)]">{resolver()?.cache?.["size-max"] || "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">Serve Stale</p>
-              <p class={`${resolver()?.options?.["serve-stale"] ? "text-emerald-400" : "text-white"}`}>
+              <p class={`${resolver()?.options?.["serve-stale"] ? "text-emerald-400" : "text-[var(--color-text)]"}`}>
                 {resolver()?.options?.["serve-stale"] === true ? "Enabled" : resolver()?.options?.["serve-stale"] === false ? "Disabled" : "--"}
               </p>
             </div>
             <div>
               <p class="text-slate-500">Monitoring</p>
-              <p class="text-white">{resolver()?.monitoring?.metrics || "--"}</p>
+              <p class="text-[var(--color-text)]">{resolver()?.monitoring?.metrics || "--"}</p>
             </div>
             <div>
               <p class="text-slate-500">Hostname</p>
-              <p class="text-white font-mono text-xs">{resolver()?.server?.hostname || "--"}</p>
+              <p class="text-[var(--color-text)] font-mono text-xs">{resolver()?.server?.hostname || "--"}</p>
             </div>
           </div>
         </div>
