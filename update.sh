@@ -78,7 +78,16 @@ if git rev-parse --is-inside-work-tree &>/dev/null; then
     git pull --ff-only 2>&1 || {
         warn "git pull failed. You may have local changes."
         if [[ "$NONINTERACTIVE" == "1" ]]; then
-            warn "Non-interactive mode, continuing anyway."
+            # Do NOT continue here. The dashboard always runs NONINTERACTIVE=1,
+            # so "continue anyway" meant a failed pull rebuilt the OLD code and
+            # still reported "Update complete!" — the update looked successful
+            # while HEAD never moved, and the pending commits reappeared on the
+            # next check. 212 sat a full release behind this way (13 Aug 2026),
+            # blocked by two locally-edited templates.
+            # A no-op pull ("Already up to date") is a SUCCESS, so Force rebuild
+            # is unaffected; only a genuinely broken pull stops here.
+            git status --short
+            error "git pull failed and this is a non-interactive run — refusing to build stale code and report success. Resolve the working tree above (commit, stash, or 'git checkout -- <file>') and retry."
         else
             read -rp "  Continue anyway? [y/N]: " CONT
             [[ "$CONT" =~ ^[Yy]$ ]] || exit 1
