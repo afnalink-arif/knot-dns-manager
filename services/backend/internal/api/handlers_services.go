@@ -8,8 +8,14 @@ import (
 	"strings"
 )
 
+// dnsdist belongs here even though it is the one service whose failure the
+// dashboard cannot see: it fronts port 53, so when it loses its kresd backend
+// the resolver goes dark while every health check stays green (238, 12 Aug
+// 2026 — 11h outage fixable only by SSH, which was firewalled off). Restarting
+// it is the documented fix for the stale-backend-IP trap, so it must be
+// reachable from the UI.
 var managedServices = []string{
-	"kresd", "dnstap-ingester", "prometheus", "node-exporter",
+	"dnsdist", "kresd", "dnstap-ingester", "prometheus", "node-exporter",
 	"clickhouse", "redis", "postgres", "frontend", "caddy", "backend",
 }
 
@@ -136,7 +142,10 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 		services []string
 	}{
 		{"Infrastructure", []string{"clickhouse", "redis", "postgres"}},
-		{"DNS pipeline", []string{"dnstap-ingester", "kresd"}},
+		// dnsdist last in this group, and strictly after kresd: it resolves the
+		// kresd backend IP once at startup, so restarting it earlier would just
+		// re-pin the old address. Mirrors update.sh step 4.
+		{"DNS pipeline", []string{"dnstap-ingester", "kresd", "dnsdist"}},
 		{"Monitoring", []string{"prometheus", "node-exporter"}},
 		{"Frontend", []string{"frontend", "caddy"}},
 	}
