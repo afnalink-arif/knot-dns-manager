@@ -260,9 +260,22 @@ export const resolverAPI = {
   info: () => fetchAPI<ResolverInfo>("/api/resolver/info"),
 };
 
+export interface CacheUsage {
+  map_size_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  live_bytes: number;
+  percent_used: number;
+  entries: number;
+  available: boolean;
+  high_water_only: boolean;
+  error?: string;
+}
+
 export interface ResolverInfo {
   config: any;
   cache: { storage: string; "size-max": string };
+  cache_usage?: CacheUsage;
   network: any;
   options: any;
   monitoring: any;

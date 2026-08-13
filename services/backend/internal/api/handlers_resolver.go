@@ -32,6 +32,9 @@ func (s *Server) handleResolverInfo(w http.ResponseWriter, r *http.Request) {
 		info["cache"] = cacheData
 	}
 
+	// Actual occupancy, measured from the LMDB itself — kresd does not export it.
+	info["cache_usage"] = readCacheUsage(r.Context())
+
 	// Fetch network config
 	if netData, err := fetchJSON(s.httpClient, mgmtBase+"/v1/config/network"); err == nil {
 		info["network"] = netData

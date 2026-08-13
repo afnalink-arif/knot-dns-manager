@@ -156,6 +156,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/project:rw
       - kresd-ruledb:/ruledb
+      # Read by mdb_stat to report real cache occupancy (kresd exports none).
+      - kresd-cache:/cache
     environment:
       SERVER_PORT: "8080"
       PROMETHEUS_URL: http://prometheus:9090
