@@ -200,13 +200,6 @@ sleep 2
 
 info "  Restarting dnsdist (packet cache proxy)..."
 docker compose up -d --no-deps dnsdist
-# dnsdist resolves the kresd backend IP once at startup. If kresd was
-# RECREATED above (new container = possibly new IP), a long-running dnsdist
-# keeps forwarding to the dead IP and port 53 goes dark while everything
-# reports healthy — this took out 238 (and briefly 216) on 12 Aug 2026.
-# `up -d` alone does nothing when dnsdist's own config is unchanged, so
-# force a restart to re-resolve.
-docker compose restart dnsdist
 
 info "  Restarting monitoring..."
 docker compose restart prometheus node-exporter
@@ -215,8 +208,23 @@ info "  Restarting frontend..."
 docker compose up -d --no-deps frontend
 
 # Restart reverse proxy
+# --no-deps is mandatory: caddy depends_on backend, which depends_on kresd.
+# Without it, `up -d caddy` drags the whole tree in and can RECREATE kresd
+# here — after dnsdist has already re-resolved — handing dnsdist a dead IP
+# again. Every other service call in this step is --no-deps; this one was
+# not, which is how 216 and 212 went dark on 13 Aug 2026.
 info "  Restarting caddy..."
-docker compose up -d caddy
+docker compose up -d --no-deps caddy
+
+# dnsdist resolves the kresd backend IP once at startup. If kresd was
+# RECREATED above (new container = possibly new IP), a long-running dnsdist
+# keeps forwarding to the dead IP and port 53 goes dark while everything
+# reports healthy — this took out 238 (and briefly 216) on 12 Aug 2026.
+# `up -d` alone does nothing when dnsdist's own config is unchanged, so
+# force a restart to re-resolve. This runs LAST, after every other service
+# has settled, so nothing can recreate kresd behind dnsdist's back.
+info "  Re-resolving dnsdist backend..."
+docker compose restart dnsdist
 
 # ---- Step 5: Health check (before backend restart) ----
 echo ""
