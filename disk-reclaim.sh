@@ -77,7 +77,18 @@ for tbl in text_log trace_log metric_log asynchronous_metric_log processors_prof
     docker compose exec -T clickhouse clickhouse-client \
         --query "OPTIMIZE TABLE system.${tbl} FINAL;" 2>/dev/null || true
 done
-log "ClickHouse system tables TTL applied"
+
+# 1c. Drop rotated system-log leftovers. When log-table settings change (e.g.
+# the TTL config in system_logs.xml landing), ClickHouse renames the live
+# table to <name>_0 and starts fresh. The _0 tables are orphans: no TTL ever
+# touches them, and neither did the loops above — 216 quietly accumulated
+# 13 GB across text_log_0, part_log_0 etc. while its ACTIVE tables stayed
+# tiny (found 13 Aug 2026). Purely internal diagnostics; always safe to drop.
+for tbl in text_log trace_log metric_log asynchronous_metric_log processors_profile_log part_log query_log query_views_log; do
+    docker compose exec -T clickhouse clickhouse-client \
+        --query "DROP TABLE IF EXISTS system.${tbl}_0;" 2>/dev/null || true
+done
+log "ClickHouse system tables TTL applied; rotated _0 leftovers dropped"
 
 # 2. Truncate old container logs — runaway crash-loop containers (e.g. postgres "no space
 # left") balloon json.log fast; truncate at >10M (was 50M, too lax for crash-loop pace).
