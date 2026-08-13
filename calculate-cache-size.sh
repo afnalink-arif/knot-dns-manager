@@ -20,8 +20,10 @@ calculate_cache_size() {
     # Reserve: keep at least 5GB free on disk after cache allocation
     local disk_reserve_mb=5120
     local disk_budget_mb=$(( disk_avail_mb - disk_reserve_mb ))
+    local floored_by_disk=0
     if (( disk_budget_mb < 256 )); then
         disk_budget_mb=256
+        floored_by_disk=1
     fi
 
     # 2. Available RAM — use 50% of total (leave room for ClickHouse, Prometheus, etc.)
@@ -41,6 +43,18 @@ calculate_cache_size() {
     # 4. Floor at 256M
     if (( cache_mb < 256 )); then
         cache_mb=256
+    fi
+
+    # Shout when transient disk pressure — a docker build mid-update is enough —
+    # has collapsed the cache to the floor. This result gets written into
+    # config.yaml and STAYS there: the cache does not recover on its own, only
+    # a later update run with roomier disk restores it. 216 silently ran a 256M
+    # cache this way (13 Aug 2026). Pin CACHE_SIZE in .env to opt out entirely.
+    if (( cache_mb <= 256 )) && (( floored_by_disk == 1 )); then
+        echo "WARNING: cache floored at 256M — only ${disk_avail_mb}M disk free," \
+             "under the ${disk_reserve_mb}M reserve. This value persists in" \
+             "config/kresd/config.yaml until the next update. Free disk and re-run," \
+             "or set a fixed CACHE_SIZE in .env." >&2
     fi
 
     # 5. Format: use GB if >= 1024MB, else MB
