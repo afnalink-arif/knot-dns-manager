@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -87,7 +89,8 @@ func (s *Server) clusterTokenMiddleware(next http.Handler) http.Handler {
 		err := s.pg.QueryRow(r.Context(),
 			"SELECT controller_token FROM cluster_config WHERE id = 1",
 		).Scan(&storedToken)
-		if err != nil || storedToken == "" || token != storedToken {
+		if err != nil || storedToken == "" ||
+			subtle.ConstantTimeCompare([]byte(token), []byte(storedToken)) != 1 {
 			http.Error(w, `{"error":"invalid cluster token"}`, http.StatusForbidden)
 			return
 		}
@@ -456,7 +459,7 @@ func (s *Server) handlePushNodeUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.proxyAgentSSE(w, domain, token, "/update/execute")
+	s.proxyAgentSSE(w, r, domain, token, "/update/execute")
 
 	// Clear cached update check so overview reflects up-to-date state
 	s.pg.Exec(context.Background(),
@@ -500,8 +503,9 @@ func (s *Server) handlePushUpdateAll(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: === Updating %s (%s) [%d/%d] ===\n\n", n.name, n.domain, i+1, len(nodes))
 		flusher.Flush()
 
-		// Trigger update on agent
-		resp, err := s.doAgentRequest("POST", n.domain, n.token, "/update/execute")
+		// Trigger update on agent — stream client, or the 30s ceiling cuts
+		// every update mid-flight (see agentStreamClient).
+		resp, err := s.doAgentRequestBody(r.Context(), agentStreamClient, "POST", n.domain, n.token, "/update/execute", nil, "")
 		if err != nil {
 			fmt.Fprintf(w, "data: [ERROR] Failed to connect: %s\n\n", err.Error())
 			flusher.Flush()
@@ -780,6 +784,23 @@ func (s *Server) pollNode(ctx context.Context, id int, domain, token string) {
 
 // --- Helper: fetch from agent ---
 
+// agentClient is for short request/response calls: a hard 30s ceiling is right.
+var agentClient = &http.Client{Timeout: 30 * time.Second}
+
+// agentStreamClient is for SSE streams (updates, RPZ syncs) that legitimately
+// run for many minutes. http.Client.Timeout covers the ENTIRE exchange
+// including reading the body, so the 30s client used to kill every remote
+// update stream at the 30-second mark while the update kept running blind on
+// the agent. Bound only the connection phases; stream lifetime is bounded by
+// the caller's request context instead.
+var agentStreamClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 20 * time.Second,
+	},
+}
+
 func (s *Server) fetchAgentEndpoint(domain, token, endpoint string) ([]byte, error) {
 	resp, err := s.doAgentRequest("GET", domain, token, endpoint)
 	if err != nil {
@@ -795,18 +816,23 @@ func (s *Server) fetchAgentEndpoint(domain, token, endpoint string) ([]byte, err
 }
 
 func (s *Server) doAgentRequest(method, domain, token, endpoint string) (*http.Response, error) {
+	return s.doAgentRequestBody(context.Background(), agentClient, method, domain, token, endpoint, nil, "")
+}
+
+func (s *Server) doAgentRequestBody(ctx context.Context, client *http.Client, method, domain, token, endpoint string, body io.Reader, contentType string) (*http.Response, error) {
 	url := fmt.Sprintf("https://%s/api/cluster/agent%s", domain, endpoint)
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-Cluster-Token", token)
-
-	client := &http.Client{Timeout: 30 * time.Second}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	return client.Do(req)
 }
 
-func (s *Server) proxyAgentSSE(w http.ResponseWriter, domain, token, endpoint string) {
+func (s *Server) proxyAgentSSE(w http.ResponseWriter, r *http.Request, domain, token, endpoint string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, `{"error":"streaming not supported"}`, http.StatusInternalServerError)
@@ -817,7 +843,9 @@ func (s *Server) proxyAgentSSE(w http.ResponseWriter, domain, token, endpoint st
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	resp, err := s.doAgentRequest("POST", domain, token, endpoint)
+	// Stream client + caller context: lives as long as the browser keeps the
+	// connection open, dies with it.
+	resp, err := s.doAgentRequestBody(r.Context(), agentStreamClient, "POST", domain, token, endpoint, nil, "")
 	if err != nil {
 		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
 		flusher.Flush()
@@ -834,4 +862,81 @@ func (s *Server) proxyAgentSSE(w http.ResponseWriter, domain, token, endpoint st
 		}
 	}
 	flusher.Flush()
+}
+
+// --- Proxy: operational levers (services / RPZ / fleet probe) ---
+
+// nodeConn looks up the domain and token for a registered agent node.
+func (s *Server) nodeConn(r *http.Request) (domain, token string, ok bool) {
+	id, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	err := s.pg.QueryRow(r.Context(),
+		"SELECT domain, api_token FROM cluster_nodes WHERE id = $1", id,
+	).Scan(&domain, &token)
+	return domain, token, err == nil
+}
+
+// proxyAgentGET forwards a simple GET to the agent and relays the JSON reply.
+func (s *Server) proxyAgentGET(w http.ResponseWriter, r *http.Request, endpoint string) {
+	domain, token, ok := s.nodeConn(r)
+	if !ok {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return
+	}
+	data, err := s.fetchAgentEndpoint(domain, token, endpoint)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+func (s *Server) handleProxyNodeServices(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentGET(w, r, "/services")
+}
+
+func (s *Server) handleProxyNodeRPZConfig(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentGET(w, r, "/rpz/config")
+}
+
+func (s *Server) handleProxyNodeRPZStats(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentGET(w, r, "/rpz/stats")
+}
+
+func (s *Server) handleProxyNodeFleetProbe(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentGET(w, r, "/fleet/probe")
+}
+
+func (s *Server) handleProxyNodeResolverInfo(w http.ResponseWriter, r *http.Request) {
+	s.proxyAgentGET(w, r, "/resolver/info")
+}
+
+func (s *Server) handleProxyNodeServiceRestart(w http.ResponseWriter, r *http.Request) {
+	domain, token, ok := s.nodeConn(r)
+	if !ok {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return
+	}
+	// Forward the {"service": "..."} body as-is; the agent validates the name
+	// against its own allowlist.
+	body := http.MaxBytesReader(w, r.Body, 4096)
+	resp, err := s.doAgentRequestBody(r.Context(), agentClient, "POST", domain, token, "/services/restart", body, "application/json")
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(data)
+}
+
+func (s *Server) handleProxyNodeRPZSync(w http.ResponseWriter, r *http.Request) {
+	domain, token, ok := s.nodeConn(r)
+	if !ok {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return
+	}
+	s.proxyAgentSSE(w, r, domain, token, "/rpz/sync")
 }

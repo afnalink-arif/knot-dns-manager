@@ -242,6 +242,20 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 		r.Post("/pair", srv.handleClusterPair)
 		r.Get("/docker/cleanup", srv.handleGetCleanupInfo)
 		r.Post("/docker/cleanup", srv.handleRunCleanup)
+
+		// Operational levers. Every incident of 12-13 Aug 2026 needed one of
+		// these and none was reachable without SSH: restart dnsdist (stale
+		// backend IP), trigger/inspect RPZ sync (silent half-loaded filter),
+		// read the fleet watchdog. All reuse the local admin handlers — same
+		// capability, cluster-token auth. Deliberately an allowlist: no
+		// arbitrary exec, a leaked token stops at restart/sync.
+		r.Get("/services", srv.handleListServices)
+		r.Post("/services/restart", srv.handleRestartService)
+		r.Get("/rpz/config", srv.handleGetRPZConfig)
+		r.Get("/rpz/stats", srv.handleRPZStats)
+		r.Post("/rpz/sync", srv.handleRPZSync)
+		r.Get("/fleet/probe", srv.handleFleetProbeStatus)
+		r.Get("/resolver/info", srv.handleResolverInfo)
 	})
 
 	// Cluster controller API (JWT + admin auth)
@@ -264,6 +278,13 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 			r.Post("/nodes/update-all", srv.handlePushUpdateAll)
 			r.Get("/nodes/{id}/cleanup", srv.handleProxyNodeCleanupInfo)
 			r.Post("/nodes/{id}/cleanup", srv.handleProxyNodeCleanup)
+			r.Get("/nodes/{id}/services", srv.handleProxyNodeServices)
+			r.Post("/nodes/{id}/services/restart", srv.handleProxyNodeServiceRestart)
+			r.Get("/nodes/{id}/rpz/config", srv.handleProxyNodeRPZConfig)
+			r.Get("/nodes/{id}/rpz/stats", srv.handleProxyNodeRPZStats)
+			r.Post("/nodes/{id}/rpz/sync", srv.handleProxyNodeRPZSync)
+			r.Get("/nodes/{id}/fleet-probe", srv.handleProxyNodeFleetProbe)
+			r.Get("/nodes/{id}/resolver-info", srv.handleProxyNodeResolverInfo)
 			r.Get("/overview", srv.handleClusterOverview)
 		})
 	})

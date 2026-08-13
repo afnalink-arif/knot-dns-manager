@@ -222,6 +222,92 @@ export default function ClusterPage() {
     return (bytes / 1e3).toFixed(0) + " KB";
   };
 
+  // --- Operational levers: per-node services, RPZ sync, fleet probe ---
+  const [openServicePanels, setOpenServicePanels] = createSignal<Set<number>>(new Set());
+  const [nodeServices, setNodeServices] = createSignal<Record<number, { name: string; status: string; health?: string }[]>>({});
+  const [nodeProbes, setNodeProbes] = createSignal<Record<number, { key: string; ok: boolean; detail: string }[]>>({});
+  const [restartingService, setRestartingService] = createSignal<Record<number, string>>({});
+  const [syncingNodes, setSyncingNodes] = createSignal<Set<number>>(new Set());
+  const [syncOutputs, setSyncOutputs] = createSignal<Record<number, string[]>>({});
+
+  const fetchNodePanel = async (nodeId: number, isLocal: boolean) => {
+    const svcUrl = isLocal ? "/api/admin/services" : `/api/cluster/nodes/${nodeId}/services`;
+    const probeUrl = isLocal ? "/api/admin/fleet/probe" : `/api/cluster/nodes/${nodeId}/fleet-probe`;
+    try {
+      const res = await fetch(svcUrl, { headers: authHeaders() });
+      if (res.ok) {
+        const svcs = await res.json();
+        setNodeServices((prev) => ({ ...prev, [nodeId]: svcs }));
+      }
+    } catch { /* ignore */ }
+    try {
+      const res = await fetch(probeUrl, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        // /fleet/probe returns {peers, results: {key: item}} — a map, not a list
+        const items = Array.isArray(data) ? data : Object.values(data.results || {});
+        setNodeProbes((prev) => ({ ...prev, [nodeId]: items as any }));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const toggleServicePanel = (nodeId: number, isLocal: boolean) => {
+    setOpenServicePanels((prev) => {
+      const s = new Set(prev);
+      if (s.has(nodeId)) { s.delete(nodeId); } else { s.add(nodeId); fetchNodePanel(nodeId, isLocal); }
+      return s;
+    });
+  };
+
+  const handleServiceRestart = async (nodeId: number, isLocal: boolean, service: string) => {
+    setRestartingService((prev) => ({ ...prev, [nodeId]: service }));
+    const url = isLocal ? "/api/admin/services/restart" : `/api/cluster/nodes/${nodeId}/services/restart`;
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ service }),
+      });
+    } catch { /* surfaced by refreshed status below */ }
+    setTimeout(() => {
+      setRestartingService((prev) => { const p = { ...prev }; delete p[nodeId]; return p; });
+      fetchNodePanel(nodeId, isLocal);
+    }, 2500);
+  };
+
+  const handleNodeRPZSync = async (nodeId: number, isLocal: boolean) => {
+    setSyncingNodes((prev) => new Set([...prev, nodeId]));
+    setSyncOutputs((prev) => ({ ...prev, [nodeId]: [] }));
+    const url = isLocal ? "/api/admin/rpz/sync" : `/api/cluster/nodes/${nodeId}/rpz/sync`;
+    try {
+      const res = await fetch(url, { method: "POST", headers: authHeaders() });
+      if (!res.ok) {
+        setSyncOutputs((prev) => ({ ...prev, [nodeId]: ["[ERROR] Failed to start RPZ sync"] }));
+      } else {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const text = line.slice(6);
+              // Keep the tail: sync logs its download progress every 5s
+              setSyncOutputs((prev) => ({ ...prev, [nodeId]: [...(prev[nodeId] || []), text].slice(-12) }));
+            }
+          }
+        }
+      }
+    } catch {
+      setSyncOutputs((prev) => ({ ...prev, [nodeId]: [...(prev[nodeId] || []), "[ERROR] Connection lost"] }));
+    }
+    setSyncingNodes((prev) => { const s = new Set(prev); s.delete(nodeId); return s; });
+  };
+
   // Auto-refresh every 15s, but pause during updates
   setInterval(() => {
     if (updatingNodes().size === 0) refetch();
@@ -430,8 +516,88 @@ export default function ClusterPage() {
                         >
                           {isCleaning() ? "Cleaning..." : <>Cleanup{nodeReclaimable() && nodeReclaimable() !== "0 B" ? <span class="ml-1 text-red-400/60">({nodeReclaimable()})</span> : ""}</>}
                         </button>
+                        <button
+                          onClick={() => handleNodeRPZSync(node.id, node.is_local)}
+                          disabled={syncingNodes().has(node.id) || isUpdating()}
+                          class="px-2 py-1 text-[10px] bg-purple-500/10 text-purple-400 rounded hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                        >
+                          {syncingNodes().has(node.id) ? "Syncing..." : "Sync RPZ"}
+                        </button>
+                        <button
+                          onClick={() => toggleServicePanel(node.id, node.is_local)}
+                          class="px-2 py-1 text-[10px] bg-slate-700 text-slate-400 rounded hover:bg-slate-600 transition-colors"
+                        >
+                          Services
+                        </button>
                       </div>
                     </div>
+
+                    {/* RPZ sync output */}
+                    <Show when={(syncOutputs()[node.id] || []).length > 0}>
+                      <div class="mt-2 bg-slate-950 rounded-lg p-2.5 font-mono text-[10px] leading-4 max-h-32 overflow-y-auto border border-slate-700/50">
+                        <For each={syncOutputs()[node.id]}>
+                          {(line) => (
+                            <div class={
+                              line.includes("[OK]") ? "text-emerald-400" :
+                              line.includes("[ERROR]") ? "text-red-400" :
+                              "text-slate-400"
+                            }>{line}</div>
+                          )}
+                        </For>
+                        <Show when={syncingNodes().has(node.id)}>
+                          <div class="text-purple-400 animate-pulse mt-0.5">Syncing...</div>
+                        </Show>
+                      </div>
+                    </Show>
+
+                    {/* Services + fleet probe panel */}
+                    <Show when={openServicePanels().has(node.id)}>
+                      <div class="mt-2 p-2.5 bg-slate-900 rounded-lg border border-slate-700/50 space-y-2">
+                        <Show when={(nodeServices()[node.id] || []).length > 0} fallback={
+                          <p class="text-[10px] text-slate-500">Loading services...</p>
+                        }>
+                          <div class="grid grid-cols-2 gap-1">
+                            <For each={nodeServices()[node.id]}>
+                              {(svc) => (
+                                <div class="flex items-center justify-between bg-slate-800/60 rounded px-2 py-1 group/svc">
+                                  <div class="flex items-center gap-1.5 min-w-0">
+                                    <span class={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                      svc.status === "running" ? "bg-emerald-500" :
+                                      svc.status === "restarting" ? "bg-amber-500" : "bg-red-500"
+                                    }`} />
+                                    <span class="text-[10px] text-slate-300 truncate">{svc.name}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleServiceRestart(node.id, node.is_local, svc.name)}
+                                    disabled={!!restartingService()[node.id]}
+                                    class="text-[9px] px-1.5 py-0.5 bg-slate-700 text-slate-400 rounded opacity-0 group-hover/svc:opacity-100 hover:bg-slate-600 transition-all disabled:opacity-50 flex-shrink-0"
+                                  >
+                                    {restartingService()[node.id] === svc.name ? "..." : "Restart"}
+                                  </button>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                        <Show when={(nodeProbes()[node.id] || []).length > 0}>
+                          <div class="pt-1.5 border-t border-slate-700/50">
+                            <p class="text-[9px] text-slate-500 mb-1 font-medium uppercase tracking-wide">Watchdog</p>
+                            <div class="flex flex-wrap gap-1">
+                              <For each={nodeProbes()[node.id]}>
+                                {(p) => (
+                                  <span
+                                    class={`px-1.5 py-0.5 rounded text-[9px] ${p.ok ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/15 text-red-400"}`}
+                                    title={p.detail}
+                                  >
+                                    {p.key}
+                                  </span>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        </Show>
+                      </div>
+                    </Show>
 
                     {/* Cleanup result */}
                     <Show when={nodeCleanResult().length > 0}>
