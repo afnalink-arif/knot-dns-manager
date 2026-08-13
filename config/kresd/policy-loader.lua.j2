@@ -66,8 +66,8 @@ if warm_sig then
 end
 -- ===== end warm ruledb check =====
 
--- Reinitialize ruledb with larger mapsize for large RPZ files (6GB)
-assert(C.kr_rules_init(nil, 8589934592, true) == 0)
+-- Reinitialize ruledb with larger mapsize for large RPZ files (12GiB)
+assert(C.kr_rules_init(nil, 12884901888, true) == 0)
 
 -- VIEWS section ------------------------------------
 {% include "views.lua.j2" %}

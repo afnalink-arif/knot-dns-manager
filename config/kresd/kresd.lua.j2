@@ -5,8 +5,8 @@ ffi = require('ffi')
 local C = ffi.C
 
 -- Do not clear the DB with rules; we had it prepared by a different process.
--- Use 6GB mapsize to match policy-loader for large RPZ files.
-assert(C.kr_rules_init(nil, 8589934592, false) == 0)
+-- Use 12GiB mapsize to match policy-loader for large RPZ files.
+assert(C.kr_rules_init(nil, 12884901888, false) == 0)
 
 -- hostname
 hostname('{{ cfg.hostname }}')
