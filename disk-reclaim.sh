@@ -21,6 +21,20 @@ disk_usage_percent() {
 log "=== Starting disk reclaim ==="
 log "Disk usage before: $(disk_usage_percent)%"
 
+# 0. Piggyback: daily PostgreSQL backup.
+# update.sh installs a dedicated 04:15 cron for this, but dashboard-triggered
+# updates run inside a container where `crontab` edits a crontab that dies
+# with the container — so on nodes only ever updated remotely (no SSH), that
+# cron never reaches the host. This script's own cron DOES run host-side on
+# every node, so it guarantees at most one backup per day regardless.
+if [ -x "${PROJECT_DIR}/backup-postgres.sh" ]; then
+    TODAY_BACKUP=$(find /root/backups/pg -name "pg-dnsmonitor-$(date +%Y%m%d)-*.sql.gz" 2>/dev/null | head -1)
+    if [ -z "$TODAY_BACKUP" ]; then
+        log "No PostgreSQL backup yet today — running backup-postgres.sh"
+        "${PROJECT_DIR}/backup-postgres.sh" || log "WARNING: pg backup failed"
+    fi
+fi
+
 # 1. ClickHouse: force TTL cleanup and drop old partitions beyond retention
 log "Cleaning ClickHouse data older than ${CH_RETENTION_DAYS} days..."
 CUTOFF_DATE=$(date -d "-${CH_RETENTION_DAYS} days" '+%Y-%m-%d')

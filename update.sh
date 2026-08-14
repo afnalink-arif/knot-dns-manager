@@ -178,6 +178,19 @@ if [[ -f config/kresd/config.yaml.template ]]; then
     ok "Regenerated: config/kresd/config.yaml"
 fi
 
+# ---- Step 2b: Ensure the PostgreSQL backup cron is installed ----
+# Postgres holds the only unregenerable state (users, cluster tokens, RPZ
+# config). Installing the cron here — idempotently — means every node gets
+# backups just by updating, including nodes with no SSH access.
+if [[ -f "${PROJECT_DIR}/backup-postgres.sh" ]]; then
+    chmod +x "${PROJECT_DIR}/backup-postgres.sh"
+    CRON_LINE="15 4 * * * ${PROJECT_DIR}/backup-postgres.sh >> /var/log/pg-backup.log 2>&1"
+    if ! crontab -l 2>/dev/null | grep -qF "backup-postgres.sh"; then
+        (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+        ok "Installed daily PostgreSQL backup cron (04:15)"
+    fi
+fi
+
 # ---- Step 3: Rebuild custom images ----
 info "Rebuilding custom images..."
 export APP_VERSION=$(cat VERSION 2>/dev/null || echo "dev")
