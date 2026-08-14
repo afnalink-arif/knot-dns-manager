@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"strconv"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // dnsdist belongs here even though it is the one service whose failure the
@@ -183,6 +186,53 @@ func (s *Server) handleRestartAll(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "event: done\ndata: All services restarted\n\n")
 	flusher.Flush()
+}
+
+// handleServiceLogs returns the tail of a service's container logs as plain
+// text. This is the diagnostic that every incident this week needed and SSH
+// was the only way to get: MDB_MAP_FULL only shows in kresd's policy-loader
+// output, dnsdist's stale-backend marking only in dnsdist's log. Read-only,
+// name-allowlisted, tail-capped — safe to expose to the cluster controller.
+func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
+	service := chi.URLParam(r, "name")
+	valid := false
+	for _, svc := range managedServices {
+		if svc == service {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		http.Error(w, `{"error":"invalid service name"}`, http.StatusBadRequest)
+		return
+	}
+
+	tail := 200
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if v, err := strconv.Atoi(t); err == nil && v > 0 {
+			tail = v
+		}
+	}
+	if tail > 1000 {
+		tail = 1000
+	}
+
+	containerName := findContainerName(service)
+	if containerName == "" {
+		http.Error(w, `{"error":"container not found"}`, http.StatusNotFound)
+		return
+	}
+
+	// docker logs writes to both streams; CombinedOutput captures the lot.
+	out, err := exec.CommandContext(r.Context(), "docker", "logs", "--tail",
+		strconv.Itoa(tail), "--timestamps", containerName).CombinedOutput()
+	if err != nil && len(out) == 0 {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, strings.TrimSpace(err.Error())), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(out)
 }
 
 // findContainerName finds the docker container name for a compose service.

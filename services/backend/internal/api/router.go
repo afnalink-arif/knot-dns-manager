@@ -161,6 +161,7 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 		r.Post("/filters/apply", srv.handleApplyFilters)
 
 		r.Get("/services", srv.handleListServices)
+		r.Get("/services/{name}/logs", srv.handleServiceLogs)
 		r.Post("/services/restart", srv.handleRestartService)
 		r.Post("/services/restart-all", srv.handleRestartAll)
 
@@ -250,6 +251,7 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 		// capability, cluster-token auth. Deliberately an allowlist: no
 		// arbitrary exec, a leaked token stops at restart/sync.
 		r.Get("/services", srv.handleListServices)
+		r.Get("/services/{name}/logs", srv.handleServiceLogs)
 		r.Post("/services/restart", srv.handleRestartService)
 		r.Get("/rpz/config", srv.handleGetRPZConfig)
 		r.Get("/rpz/stats", srv.handleRPZStats)
@@ -279,6 +281,7 @@ func NewRouter(cfg *config.Config) (http.Handler, func(), error) {
 			r.Get("/nodes/{id}/cleanup", srv.handleProxyNodeCleanupInfo)
 			r.Post("/nodes/{id}/cleanup", srv.handleProxyNodeCleanup)
 			r.Get("/nodes/{id}/services", srv.handleProxyNodeServices)
+			r.Get("/nodes/{id}/services/{name}/logs", srv.handleProxyNodeServiceLogs)
 			r.Post("/nodes/{id}/services/restart", srv.handleProxyNodeServiceRestart)
 			r.Get("/nodes/{id}/rpz/config", srv.handleProxyNodeRPZConfig)
 			r.Get("/nodes/{id}/rpz/stats", srv.handleProxyNodeRPZStats)

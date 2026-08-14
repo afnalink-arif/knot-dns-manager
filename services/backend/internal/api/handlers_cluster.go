@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -893,6 +894,26 @@ func (s *Server) proxyAgentGET(w http.ResponseWriter, r *http.Request, endpoint 
 
 func (s *Server) handleProxyNodeServices(w http.ResponseWriter, r *http.Request) {
 	s.proxyAgentGET(w, r, "/services")
+}
+
+func (s *Server) handleProxyNodeServiceLogs(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	endpoint := "/services/" + name + "/logs"
+	if tail := r.URL.Query().Get("tail"); tail != "" {
+		endpoint += "?tail=" + url.QueryEscape(tail)
+	}
+	domain, token, ok := s.nodeConn(r)
+	if !ok {
+		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
+		return
+	}
+	data, err := s.fetchAgentEndpoint(domain, token, endpoint)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(data)
 }
 
 func (s *Server) handleProxyNodeRPZConfig(w http.ResponseWriter, r *http.Request) {
