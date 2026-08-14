@@ -265,6 +265,27 @@ echo ""
 
 # Restart backend LAST — when running inside the backend container,
 # this kills the update process, so everything else must be done first.
-# Use nohup so the docker command survives even if this shell is killed.
+#
+# nohup is NOT enough here. Dashboard-triggered updates run this script inside
+# a transient container; when the script ends the container exits, its PID
+# namespace dies, and a nohup'd process dies with it — before it ever recreates
+# the backend. Result: git and images updated, backend still running the OLD
+# binary, and everything reports success. Both 212 and 238 were left in that
+# state on 13-14 Aug 2026 (new API routes 404ing while /version answered).
+#
+# So launch the recreate as a detached SIBLING container instead: it lives in
+# its own namespace and survives this script's exit. The backend image is used
+# because it is guaranteed present locally and ships docker-cli + compose.
 info "Restarting backend container..."
-nohup docker compose up -d backend >/dev/null 2>&1 &
+SIBLING_IMAGE=$(docker inspect "$(hostname)" --format '{{.Config.Image}}' 2>/dev/null || true)
+[[ -z "$SIBLING_IMAGE" ]] && SIBLING_IMAGE="knot-dns-monitor-backend:latest"
+docker run -d --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "${PROJECT_DIR}:${PROJECT_DIR}" \
+    --entrypoint sh \
+    "$SIBLING_IMAGE" \
+    -c "sleep 2 && docker compose -f '${PROJECT_DIR}/docker-compose.yml' --project-directory '${PROJECT_DIR}' up -d --no-deps --force-recreate backend" \
+    >/dev/null 2>&1 || {
+    # Host-shell runs (no container to fight) can still fall back to nohup.
+    nohup docker compose up -d backend >/dev/null 2>&1 &
+}
