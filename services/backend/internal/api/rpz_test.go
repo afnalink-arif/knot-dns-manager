@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,19 +85,150 @@ func TestLocalZoneSerial(t *testing.T) {
 	}
 }
 
-func TestFirstBlockedOwner(t *testing.T) {
+func TestOwnerFromRPZLine(t *testing.T) {
+	const zone = "trustpositifkominfo"
+	// Not probeable: apex/SOA, NS, wildcards, passthru, single-label owners.
+	skip := []string{
+		"trustpositifkominfo.\t900\tIN\tSOA\tlocalhost. x. 26081205 120 60 2592000 900",
+		"trustpositifkominfo.\t900\tIN\tNS\tlocalhost.",
+		"*.wild.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216",
+		"good.example.trustpositifkominfo.\t3600\tIN\tCNAME\trpz-passthru.",
+		"; a comment",
+		"$ORIGIN trustpositifkominfo.",
+		"",
+		"other.zone.example.\t3600\tIN\tA\t1.2.3.4",
+	}
+	for _, line := range skip {
+		if got := ownerFromRPZLine(line, zone); got != "" {
+			t.Errorf("ownerFromRPZLine(%q) = %q, want empty", line, got)
+		}
+	}
+	if got := ownerFromRPZLine("blocked.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216", zone); got != "blocked.example" {
+		t.Errorf("ownerFromRPZLine = %q, want blocked.example", got)
+	}
+}
+
+// A half-loaded ruledb keeps the head of the zone, so sampling has to reach
+// past it — this is the property that makes the probe able to see a partial load.
+func TestSampleBlockedOwnersSpreadsAcrossFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rpz.zone")
-	content := "trustpositifkominfo.\t900\tIN\tSOA\tlocalhost. x. 26081205 120 60 2592000 900\n" +
-		"*.wild.example.trustpositifkominfo.\t3600\tIN\tCNAME\t.\n" +
-		"blocked.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216\n"
-	os.WriteFile(path, []byte(content), 0644)
-	// SOA and wildcard lines must be skipped; the plain owner is returned
-	if got := firstBlockedOwner(path, "trustpositifkominfo"); got != "blocked.example" {
-		t.Errorf("firstBlockedOwner = %q, want %q", got, "blocked.example")
+	var b strings.Builder
+	b.WriteString("trustpositifkominfo.\t900\tIN\tSOA\tlocalhost. x. 26081205 120 60 2592000 900\n")
+	for i := 0; i < 5000; i++ {
+		fmt.Fprintf(&b, "d%05d.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216\n", i)
+		fmt.Fprintf(&b, "*.d%05d.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216\n", i)
 	}
-	if got := firstBlockedOwner(filepath.Join(dir, "missing"), "trustpositifkominfo"); got != "" {
-		t.Errorf("missing file should give empty owner, got %q", got)
+	os.WriteFile(path, []byte(b.String()), 0644)
+
+	owners := sampleBlockedOwners(path, "trustpositifkominfo", 8)
+	if len(owners) < 4 {
+		t.Fatalf("expected several samples, got %d: %v", len(owners), owners)
+	}
+	seen := map[string]bool{}
+	beyondHead := 0
+	for _, o := range owners {
+		if seen[o] {
+			t.Errorf("duplicate sample %q", o)
+		}
+		seen[o] = true
+		if strings.HasPrefix(o, "*") {
+			t.Errorf("wildcard owner sampled: %q", o)
+		}
+		if !strings.HasSuffix(o, ".example") {
+			t.Errorf("malformed owner: %q", o)
+		}
+		if o > "d00500.example" {
+			beyondHead++
+		}
+	}
+	if beyondHead == 0 {
+		t.Error("all samples came from the head of the file — a partial ruledb load would look healthy")
+	}
+	if got := sampleBlockedOwners(filepath.Join(dir, "missing"), "trustpositifkominfo", 4); got != nil {
+		t.Errorf("missing file should give no samples, got %v", got)
+	}
+}
+
+func TestZoneBodyDigestIgnoresSerialButNotContent(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, soaSerial string, records ...string) string {
+		p := filepath.Join(dir, name)
+		content := "trustpositifkominfo.\t900\tIN\tSOA\tlocalhost. x. " + soaSerial + " 120 60 2592000 900\n" +
+			strings.Join(records, "\n") + "\n"
+		os.WriteFile(p, []byte(content), 0644)
+		return p
+	}
+	a := "a.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216"
+	b := "b.example.trustpositifkominfo.\t3600\tIN\tA\t103.186.204.216"
+
+	base := write("base", "26081205", a, b)
+	bumped := write("bumped", "26081301", a, b) // serial-only bump: must match
+	reordered := write("reordered", "26081301", b, a)
+	changed := write("changed", "26081301", a)
+
+	dBase, err := zoneBodyDigest(base)
+	if err != nil {
+		t.Fatalf("digest failed: %v", err)
+	}
+	dBumped, _ := zoneBodyDigest(bumped)
+	if dBase != dBumped {
+		t.Error("serial-only bump changed the digest — every daily sync would reload the ruledb")
+	}
+	// AXFR does not guarantee record order; a positional hash would never match.
+	dReordered, _ := zoneBodyDigest(reordered)
+	if dBase != dReordered {
+		t.Error("record order changed the digest")
+	}
+	dChanged, _ := zoneBodyDigest(changed)
+	if dBase == dChanged {
+		t.Error("a removed domain did not change the digest — a real update would be skipped")
+	}
+	if _, err := zoneBodyDigest(filepath.Join(dir, "missing")); err == nil {
+		t.Error("missing file should error")
+	}
+}
+
+func TestRPZSanityCheck(t *testing.T) {
+	// Truncated transfer: absolute floor.
+	if err := rpzSanityCheck(12_000, 9_000_000); err == nil {
+		t.Error("a 12k-domain zone must be rejected")
+	}
+	// The 238 failure shape: plausible size, but a fifth of the list is gone.
+	if err := rpzSanityCheck(6_000_000, 9_000_000); err == nil {
+		t.Error("a 33% shrink must be rejected")
+	}
+	// Normal churn passes.
+	if err := rpzSanityCheck(8_900_000, 9_000_000); err != nil {
+		t.Errorf("normal churn rejected: %v", err)
+	}
+	// Growth always passes.
+	if err := rpzSanityCheck(9_500_000, 9_000_000); err != nil {
+		t.Errorf("growth rejected: %v", err)
+	}
+	// First sync ever (no previous count) only faces the absolute floor.
+	if err := rpzSanityCheck(9_000_000, 0); err != nil {
+		t.Errorf("first sync rejected: %v", err)
+	}
+}
+
+func TestRPZVerdictHealthy(t *testing.T) {
+	cases := []struct {
+		name string
+		v    rpzVerdict
+		want bool
+	}{
+		{"all blocked", rpzVerdict{ResolverUp: true, Blocked: 8, Total: 8}, true},
+		{"one leak", rpzVerdict{ResolverUp: true, Blocked: 7, Total: 8}, false},
+		// A dead resolver answers nothing, which must never read as "blocked".
+		{"resolver down", rpzVerdict{ResolverUp: false}, false},
+		{"no samples", rpzVerdict{ResolverUp: true, Total: 0}, false},
+		{"overblock", rpzVerdict{ResolverUp: true, Blocked: 8, Total: 8, Overblock: true}, false},
+	}
+	for _, c := range cases {
+		if got := c.v.Healthy(); got != c.want {
+			t.Errorf("%s: Healthy() = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

@@ -277,6 +277,10 @@ type RPZConfig struct {
 	AutoSyncIntervalHrs  int        `json:"auto_sync_interval_hours"`
 	AutoSyncHour         int        `json:"auto_sync_hour"`
 	ZoneSerial           uint64     `json:"zone_serial"`
+	ZoneDigest           string     `json:"zone_digest"`
+	LastVerifyAt         *time.Time `json:"last_verify_at"`
+	LastVerifyStatus     string     `json:"last_verify_status"`
+	LastVerifyDetail     string     `json:"last_verify_detail"`
 }
 
 // komdigiMasters is the official RPZ master list from the Komdigi juknis
@@ -297,11 +301,12 @@ func (s *Server) getRPZConfig() RPZConfig {
 	s.pg.QueryRow(ctx,
 		`SELECT enabled, master_servers, zone_name, last_sync, last_sync_status, last_sync_error,
 		        domain_count, file_size_bytes, sync_duration_ms, auto_sync_enabled, auto_sync_interval_hours,
-		        auto_sync_hour, zone_serial
+		        auto_sync_hour, zone_serial, zone_digest, last_verify_at, last_verify_status, last_verify_detail
 		 FROM rpz_config WHERE id = 1`,
 	).Scan(&cfg.Enabled, &cfg.MasterServers, &cfg.ZoneName, &cfg.LastSync, &cfg.LastSyncStatus,
 		&cfg.LastSyncError, &cfg.DomainCount, &cfg.FileSizeBytes, &cfg.SyncDurationMs,
-		&cfg.AutoSyncEnabled, &cfg.AutoSyncIntervalHrs, &cfg.AutoSyncHour, &cfg.ZoneSerial)
+		&cfg.AutoSyncEnabled, &cfg.AutoSyncIntervalHrs, &cfg.AutoSyncHour, &cfg.ZoneSerial,
+		&cfg.ZoneDigest, &cfg.LastVerifyAt, &cfg.LastVerifyStatus, &cfg.LastVerifyDetail)
 	return cfg
 }
 
@@ -533,14 +538,20 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Atomic rename: tmp → final
-	if err := os.Rename(tmpFile, rpzFile); err != nil {
-		data, _ := os.ReadFile(tmpFile)
-		if len(data) > 1024 { // only overwrite if we have real data
-			os.WriteFile(rpzFile, data, 0644)
-		}
+	// Gates + atomic swap. A zone that fails the size/shrink gates never
+	// reaches disk, so a truncated transfer cannot take the filter down.
+	published, err := s.publishRPZZone(tmpFile, rpzFile, domainCount, cfg)
+	if err != nil {
+		errMsg := err.Error()
+		sendEvent(fmt.Sprintf("[ERROR] %s", errMsg))
 		os.Remove(tmpFile)
+		s.updateRPZSyncStatus("error", errMsg, 0, 0, int(time.Since(startTime).Milliseconds()))
+		s.fireSystemAlert("rpz-sanity", "Sync RPZ ditolak gate keamanan: "+errMsg)
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", errMsg)
+		flusher.Flush()
+		return
 	}
+	s.resolveSystemAlert("rpz-sanity", "Sync RPZ lolos gate keamanan kembali.")
 
 	duration := time.Since(startTime)
 	fileInfo, _ := os.Stat(rpzFile)
@@ -556,14 +567,25 @@ func (s *Server) handleRPZSync(w http.ResponseWriter, r *http.Request) {
 		domainCount, float64(fileSize)/1024/1024, duration.Milliseconds()))
 
 	// If RPZ is enabled, regenerate kresd config (adds local-data.rpz YAML) and restart
-	if cfg.Enabled {
+	switch {
+	case !cfg.Enabled:
+		sendEvent("[INFO] RPZ is disabled — zone file saved but not applied to resolver")
+	case !published.reloadNeeded:
+		sendEvent("[OK] Isi blocklist identik dengan yang sudah aktif (hanya serial yang naik) — reload ruledb dilewati, kresd tidak disentuh.")
+	default:
 		sendEvent("[INFO] Applying to DNS resolver via native RPZ (shared ruledb)...")
 		s.regenerateKresdConfig(true)
-		s.restartKresdVerified()
+		if rerr := s.restartKresdVerified(); rerr != nil {
+			sendEvent(fmt.Sprintf("[ERROR] %v", rerr))
+			s.updateRPZSyncStatus("error", rerr.Error(), domainCount, fileSize, int(time.Since(startTime).Milliseconds()))
+			fmt.Fprintf(w, "event: error\ndata: restart kresd gagal\n\n")
+			flusher.Flush()
+			return
+		}
 		sendEvent("[OK] DNS resolver restarted — policy-loader sedang memuat RPZ zone ke ruledb...")
 		sendEvent(fmt.Sprintf("[INFO] Loading %d domain ke shared LMDB database. Proses ini berjalan di background.", domainCount))
-	} else {
-		sendEvent("[INFO] RPZ is disabled — zone file saved but not applied to resolver")
+		sendEvent("[INFO] Verifikasi filter berjalan di background — alert dikirim bila zone tidak menapis.")
+		go s.watchRPZActivation(rpzFile, cfg.ZoneName, redirectIP, published.prevLink)
 	}
 
 	fmt.Fprintf(w, "event: done\ndata: sync complete\n\n")
@@ -1045,6 +1067,13 @@ func (s *Server) doRPZSyncBackground() {
 					}
 					s.updateRPZSyncStatus("success", "", domainCount, fileSize, int(time.Since(startTime).Milliseconds()))
 					s.updateZoneSerial(rpzFile)
+					// IXFR rewrites rpz.zone in place, so record the new content
+					// fingerprint — otherwise the next AXFR would compare against a
+					// stale digest and reload a zone it did not need to.
+					if digest, derr := zoneBodyDigest(rpzFile); derr == nil {
+						s.pg.Exec(context.Background(),
+							`UPDATE rpz_config SET zone_digest = $1 WHERE id = 1`, digest)
+					}
 					log.Printf("RPZ auto-sync (IXFR): %d domains, %+d/-%d entries, %v",
 						domainCount, stats.added, stats.deleted, time.Since(startTime).Round(time.Second))
 					if cfg.Enabled {
@@ -1054,6 +1083,7 @@ func (s *Server) doRPZSyncBackground() {
 							return
 						}
 						log.Printf("RPZ auto-sync (IXFR): kresd restarted with updated zone")
+						go s.watchRPZActivation(rpzFile, cfg.ZoneName, redirectIP, "")
 					}
 					return
 				case ixfrUnchanged:
@@ -1166,13 +1196,16 @@ func (s *Server) doRPZSyncBackground() {
 		return
 	}
 
-	if err := os.Rename(tmpFile, rpzFile); err != nil {
-		data, _ := os.ReadFile(tmpFile)
-		if len(data) > 1024 {
-			os.WriteFile(rpzFile, data, 0644)
-		}
+	published, perr := s.publishRPZZone(tmpFile, rpzFile, domainCount, cfg)
+	if perr != nil {
+		errMsg := "auto-sync: " + perr.Error()
+		log.Printf("RPZ %s", errMsg)
 		os.Remove(tmpFile)
+		s.updateRPZSyncStatus("error", errMsg, 0, 0, int(time.Since(startTime).Milliseconds()))
+		s.fireSystemAlert("rpz-sanity", "Auto-sync RPZ ditolak gate keamanan: "+perr.Error())
+		return
 	}
+	s.resolveSystemAlert("rpz-sanity", "Auto-sync RPZ lolos gate keamanan kembali.")
 
 	duration := time.Since(startTime)
 	fileInfo, _ := os.Stat(rpzFile)
@@ -1185,10 +1218,22 @@ func (s *Server) doRPZSyncBackground() {
 	s.updateZoneSerial(rpzFile)
 	log.Printf("RPZ auto-sync complete: %d domains, %.1f MB, %v", domainCount, float64(fileSize)/1024/1024, duration.Round(time.Second))
 
-	if cfg.Enabled {
+	switch {
+	case !cfg.Enabled:
+	case !published.reloadNeeded:
+		// Komdigi bumps the serial daily; the blocklist itself changes less often.
+		// A reload here would cost a full ruledb rebuild — minutes on 216, hours on
+		// 238 — during which the resolver answers unfiltered.
+		log.Printf("RPZ auto-sync: isi blocklist identik (serial %d), reload ruledb dilewati",
+			localZoneSerial(rpzFile))
+	default:
 		s.regenerateKresdConfig(true)
-		s.restartKresdVerified()
+		if err := s.restartKresdVerified(); err != nil {
+			s.updateRPZSyncStatus("error", err.Error(), domainCount, fileSize, int(time.Since(startTime).Milliseconds()))
+			return
+		}
 		log.Println("RPZ auto-sync: kresd restarted with updated zone")
+		go s.watchRPZActivation(rpzFile, cfg.ZoneName, redirectIP, published.prevLink)
 	}
 }
 

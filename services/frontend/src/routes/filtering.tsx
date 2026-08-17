@@ -589,7 +589,7 @@ export default function FilteringPage() {
             </div>
 
             {/* Stats */}
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <p class="text-[10px] text-slate-500">Blocked Domains</p>
                 <p class="text-xl font-bold text-[var(--color-text)] mt-1">{(rpzConfig()?.domain_count || 0).toLocaleString()}</p>
@@ -626,6 +626,26 @@ export default function FilteringPage() {
                 </p>
                 <Show when={rpzConfig()?.last_sync_error}>
                   <p class="text-[10px] text-red-400 mt-1 truncate" title={rpzConfig()!.last_sync_error}>{rpzConfig()!.last_sync_error}</p>
+                </Show>
+              </div>
+              {/* Filtering is verified separately from syncing: a zone can land on
+                  disk and still not be applied (ruledb loaded only halfway). */}
+              <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                <p class="text-[10px] text-slate-500">Filter Aktif</p>
+                <p class={`text-sm font-medium mt-1 ${
+                  rpzConfig()?.last_verify_status === "ok" ? "text-emerald-400" :
+                  rpzConfig()?.last_verify_status === "failed" ? "text-red-400" :
+                  rpzConfig()?.last_verify_status === "loading" ? "text-amber-400" : "text-slate-400"
+                }`}>
+                  {rpzConfig()?.last_verify_status === "ok" ? "Terverifikasi" :
+                   rpzConfig()?.last_verify_status === "failed" ? "Tidak menapis" :
+                   rpzConfig()?.last_verify_status === "loading" ? "Memuat ruledb" : "—"}
+                </p>
+                <Show when={rpzConfig()?.last_verify_detail}>
+                  <p class="text-[10px] text-slate-500 mt-1 truncate" title={rpzConfig()!.last_verify_detail}>{rpzConfig()!.last_verify_detail}</p>
+                </Show>
+                <Show when={rpzConfig()?.last_verify_at}>
+                  <p class="text-[10px] text-slate-500 mt-0.5">{new Date(rpzConfig()!.last_verify_at!).toLocaleString()}</p>
                 </Show>
               </div>
             </div>

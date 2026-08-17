@@ -200,6 +200,12 @@ export interface RPZConfig {
   auto_sync_enabled: boolean;
   auto_sync_interval_hours: number;
   auto_sync_hour: number;
+  zone_serial: number;
+  // Proof that the loaded zone is actually filtering — "sync success" only
+  // means the file landed on disk, not that kresd is applying it.
+  last_verify_at: string | null;
+  last_verify_status: string; // "" | ok | loading | failed
+  last_verify_detail: string;
 }
 
 // Block Page Config API

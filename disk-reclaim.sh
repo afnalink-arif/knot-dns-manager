@@ -35,6 +35,26 @@ if [ -x "${PROJECT_DIR}/backup-postgres.sh" ]; then
     fi
 fi
 
+# 0b. Orphaned RPZ zone files. Each is ~1.3GB, which is a fifth of the free
+# space on a 50GB node. Three kinds accumulate:
+#   - rpz.zone.tmp / .converted: left by a sync that died mid-transfer
+#   - rpz.zone.previous: the rollback copy the backend links before swapping in
+#     a new zone. It is removed once verification confirms the new zone filters,
+#     but a backend restart during that window strands it.
+# The 8h floor is deliberately above the 6h activation-verification budget, so
+# a previous generation still under verification is never pulled out from under it.
+RPZ_DIR="${PROJECT_DIR}/config/kresd"
+if [ -d "$RPZ_DIR" ]; then
+    STRANDED=$(find "$RPZ_DIR" -maxdepth 1 -type f \
+        \( -name 'rpz.zone.tmp' -o -name 'rpz.zone.tmp.converted' -o -name 'rpz.zone.previous' \) \
+        -mmin +480 2>/dev/null || true)
+    if [ -n "$STRANDED" ]; then
+        FREED=$(echo "$STRANDED" | xargs -r du -ch 2>/dev/null | tail -1 | cut -f1)
+        log "Removing stranded RPZ zone files (>8h old, ${FREED:-?}): $(echo "$STRANDED" | tr '\n' ' ')"
+        echo "$STRANDED" | xargs -r rm -f
+    fi
+fi
+
 # 1. ClickHouse: force TTL cleanup and drop old partitions beyond retention
 log "Cleaning ClickHouse data older than ${CH_RETENTION_DAYS} days..."
 CUTOFF_DATE=$(date -d "-${CH_RETENTION_DAYS} days" '+%Y-%m-%d')

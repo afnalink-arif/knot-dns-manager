@@ -103,29 +103,6 @@ func digAnswers(server, name string) (bool, string) {
 	return true, strings.Split(answer, "\n")[0]
 }
 
-// firstBlockedOwner returns one owner name from the local RPZ zone, used to
-// verify blocking end-to-end. Empty when no zone is present.
-func firstBlockedOwner(zonePath, zoneName string) string {
-	head, err := readFileHead(zonePath, 64*1024)
-	if err != nil {
-		return ""
-	}
-	suffix := "." + zoneName + "."
-	for _, line := range strings.Split(head, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 4 || !strings.HasSuffix(fields[0], suffix) {
-			continue
-		}
-		owner := strings.TrimSuffix(fields[0], suffix)
-		// skip the SOA line and wildcard entries — we need a plain queryable name
-		if owner == "" || strings.HasPrefix(owner, "*") || strings.EqualFold(fields[3], "SOA") {
-			continue
-		}
-		return owner
-	}
-	return ""
-}
-
 // runFleetProbe is the watchdog loop; started from NewRouter.
 func (s *Server) runFleetProbe(ctx context.Context) {
 	// First pass shortly after boot so a fresh deploy reports quickly,
@@ -171,22 +148,26 @@ func (s *Server) probePeersAndSelf() {
 		return
 	}
 	zonePath := filepath.Join(s.cfg.ProjectDir, "config", "kresd", "rpz.zone")
-	owner := firstBlockedOwner(zonePath, cfg.ZoneName)
-	if owner == "" {
-		return
-	}
 	key := "self-rpz"
 	serverIP := loadEnvFile(filepath.Join(s.cfg.ProjectDir, ".env"))["SERVER_IP"]
-	answered, answer := digAnswers("kresd", owner)
-	// Blocked outcome is either NXDOMAIN (no answer) or our own redirect IP.
-	// A real upstream answer means the RPZ rules are not being applied.
-	blockedOK := !answered || (serverIP != "" && answer == serverIP)
-	fails := fleetProbe.record(key, blockedOK, fmt.Sprintf("%s -> %s", owner, answer))
-	if blockedOK {
-		s.resolveSystemAlert(key, "RPZ kembali memblokir dengan benar.")
+
+	// Sampled across the whole zone, and re-sampled every round. Probing the
+	// first owner (what this did before) is the weakest possible test: a
+	// partially loaded ruledb holds the head of the zone, so that one name
+	// answers "blocked" while the rest of the list leaks — and after the first
+	// round it is served from cache anyway.
+	v := verifyRPZFiltering(zonePath, cfg.ZoneName, serverIP, rpzVerifySamples)
+	if !v.ResolverUp || v.Total == 0 {
+		// Resolver down is the peer check's job; an inconclusive filter probe
+		// must not be recorded as either healthy or leaking.
+		return
+	}
+	fails := fleetProbe.record(key, v.Healthy(), v.Detail)
+	if v.Healthy() {
+		s.resolveSystemAlert(key, "RPZ kembali memblokir dengan benar ("+v.Detail+").")
 	} else if fails >= failsBeforeAlert {
 		s.fireSystemAlert(key, fmt.Sprintf(
-			"RPZ TIDAK memblokir: %s dijawab %s (bukan blokir). Ruledb kresd mungkin tidak memuat zone.", owner, answer))
+			"RPZ TIDAK memblokir sepenuhnya: %s. Ruledb kresd mungkin termuat sebagian.", v.Detail))
 	}
 }
 

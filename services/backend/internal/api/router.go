@@ -360,6 +360,13 @@ func initPostgres(pool *pgxpool.Pool) error {
 		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS auto_sync_hour INT NOT NULL DEFAULT 2`,
 		// Add zone_serial: lets auto-sync skip a 1.1GB AXFR when Komdigi's serial is unchanged
 		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS zone_serial BIGINT NOT NULL DEFAULT 0`,
+		// zone_digest fingerprints the blocklist content itself, so a serial-only bump
+		// no longer costs a full ruledb reload (hours on a slow disk, unfiltered throughout).
+		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS zone_digest TEXT NOT NULL DEFAULT ''`,
+		// last_verify_*: proof that the loaded zone is actually filtering, not just present.
+		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS last_verify_at TIMESTAMPTZ`,
+		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS last_verify_status VARCHAR(20) NOT NULL DEFAULT ''`,
+		`ALTER TABLE rpz_config ADD COLUMN IF NOT EXISTS last_verify_detail TEXT NOT NULL DEFAULT ''`,
 		// Seed rpz_config row + migrate old master_servers
 		`INSERT INTO rpz_config (id, master_servers) VALUES (1, '139.255.196.202,182.23.79.202') ON CONFLICT DO NOTHING`,
 		// Drop the decommissioned master (juknis Ver.260326: "IP 103.154.123.130 sudah tidak
